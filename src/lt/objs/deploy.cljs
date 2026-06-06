@@ -5,11 +5,12 @@
             [lt.objs.files :as files]
             [lt.objs.notifos :as notifos]
             [lt.util.load :as load]
-            [clojure.string :as string])
+            [clojure.string :as string]
+            [lt.util.broker :as broker])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-(def fs (js/require "fs"))
-(def zlib (js/require "zlib"))
+(def fs broker/fs)
+(def zlib broker/zlib)
 (def tar (load/node-module "tar"))
 (def home-path (files/lt-home ""))
 (def request-strict-ssl true)

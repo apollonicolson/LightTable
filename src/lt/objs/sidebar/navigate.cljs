@@ -12,6 +12,7 @@
             [lt.util.dom :as dom]
             [lt.objs.thread]
             [lt.util.load :as load]
+            [lt.util.broker :as broker]
             [singultus.core :as crate]
             [singultus.binding :refer [bound subatom]])
   (:require-macros [lt.macros :refer [behavior defui background]]))
@@ -21,8 +22,8 @@
   (re-seq files/ignore-pattern f))
 
 (def populate-bg (background (fn [obj-id {:keys [lim pattern ws]}]
-                               (let [fs (js/require "fs")
-                                     fpath (js/require "path")
+                               (let [fs broker/fs
+                                     fpath broker/path
                                      walkdir (js/require (str js/ltpath "/core/lighttable/background/walkdir2.js"))
                                      grab-files (fn [all-files folder]
                                                   (let [root-length (inc (count (.dirname fpath folder)))

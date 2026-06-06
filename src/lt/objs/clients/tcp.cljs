@@ -5,11 +5,12 @@
             [lt.object :as object]
             [lt.objs.clients :as clients]
             [lt.objs.console :as console]
+            [lt.util.broker :as broker]
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (def port 0)
-(def net (js/require "net"))
+(def net broker/net)
 
 (defn send-to [sock msg]
   (if sock

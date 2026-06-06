@@ -8,12 +8,13 @@
             [clojure.string :as string]
             [lt.util.js :refer [now]]
             [lt.util.dom :refer [$] :as dom]
-            [lt.util.ipc :as ipc])
+            [lt.util.ipc :as ipc]
+            [lt.util.broker :as broker])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def remote (js/require "@electron/remote"))
+(def remote broker/remote)
 (def win (.getCurrentWindow remote))
-(def frame (.-webFrame (js/require "electron")))
+(def frame (.-webFrame broker/electron))
 ;; screen is a main-process module: since Electron 6 it is undefined on the
 ;; renderer's require("electron") and must be reached via @electron/remote
 ;; (same reason getCurrentWindow above goes through remote). Bare-require here

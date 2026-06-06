@@ -6,10 +6,11 @@
             [lt.objs.platform :as platform]
             [lt.objs.app :as app]
             [lt.util.dom :as dom]
-            [clojure.string :as string])
+            [clojure.string :as string]
+            [lt.util.broker :as broker])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def remote (js/require "@electron/remote"))
+(def remote broker/remote)
 (def Menu (.-Menu remote))
 (def MenuItem (.-MenuItem remote))
 

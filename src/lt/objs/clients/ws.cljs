@@ -6,6 +6,7 @@
             [lt.objs.files :as files]
             [lt.objs.clients :as clients]
             [lt.util.load :as load]
+            [lt.util.broker :as broker]
             [clojure.string :as string])
   (:use [lt.util.js :only [wait ->clj]])
   (:require-macros [lt.macros :refer [behavior]]))
@@ -13,7 +14,7 @@
 (def port 0)
 (def sockets (atom {}))
 (def io (load/node-module "socket.io"))
-(def net (js/require "net"))
+(def net broker/net)
 
 (defn send-to [sock data]
   (if sock

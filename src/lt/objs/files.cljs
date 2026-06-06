@@ -4,16 +4,19 @@
   (:refer-clojure :exclude [open exists? resolve])
   (:require [lt.object :as object]
             [lt.util.load :as load]
+            [lt.util.broker :as broker]
             [clojure.string :as string]
             [lt.objs.platform :as platform]
             [lt.util.js :refer [now]])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def ^:private fs (js/require "fs"))
-(def ^:private fpath (js/require "path"))
+;; Host modules via the M1 effect broker (single sandboxing seam) rather than
+;; js/require here — see lt.objs.broker.
+(def ^:private fs broker/fs)
+(def ^:private fpath broker/path)
 ;; https://github.com/electron/electron/blob/master/docs/api/shell.md
-(def ^:private electron-shell (.-shell (js/require "electron")))
-(def ^:private os (js/require "os"))
+(def ^:private electron-shell (.-shell broker/electron))
+(def ^:private os broker/os)
 (def ^:private data-path (platform/get-data-path))
 
 (defn- typelist->index [cur types]
@@ -69,7 +72,7 @@
 (def cwd "Directory process is started in." (js/process.cwd))
 
 (when (= separator "\\")
-  (.exec (js/require "child_process") "wmic logicaldisk get name"
+  (.exec broker/child-process "wmic logicaldisk get name"
          (fn [_ out _]
            (let [ds (rest (.split out #"\r\n|\r|\n"))
                  ds (map #(str (.trim %) separator) (remove empty? ds))]

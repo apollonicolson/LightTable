@@ -2,10 +2,11 @@
   "Provide Electron-based dialogs"
   (:require [lt.object :as object]
             [lt.util.dom :as dom]
-            [lt.objs.app :as app])
+            [lt.objs.app :as app]
+            [lt.util.broker :as broker])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-(def remote (js/require "@electron/remote"))
+(def remote broker/remote)
 (def dialog (.-dialog remote))
 
 (defn dir [obj event]

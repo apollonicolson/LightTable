@@ -7,10 +7,11 @@
             [lt.objs.app :as app]
             [lt.objs.notifos :as notifos]
             [lt.util.load :as load]
-            [clojure.string :as string])
+            [clojure.string :as string]
+            [lt.util.broker :as broker])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def spawn (.-spawn (js/require "child_process")))
+(def spawn (.-spawn broker/child-process))
 (def custom-env (atom {}))
 
 (def procs (atom #{}))
@@ -131,7 +132,7 @@
           :reaction (fn [app]
                       (when (and (platform/mac?)
                                  (not (aget js/process.env "LTCLI")))
-                        (.exec (js/require "child_process") (str (etc-paths->PATH) (get-path-command))
+                        (.exec broker/child-process (str (etc-paths->PATH) (get-path-command))
                                (fn [err out serr]
                                  (if-not (empty? err)
                                    (do
@@ -166,7 +167,7 @@
 
 
 (defn capture [cmd vars cb]
-  (.exec (js/require "child_process") (str cmd " && " (var-caps vars))
+  (.exec broker/child-process (str cmd " && " (var-caps vars))
          (fn [err out serr]
            (let [vs (zipmap vars (string/split out ";"))]
              (cb vs)))))

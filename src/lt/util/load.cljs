@@ -1,9 +1,10 @@
 (ns lt.util.load
   "Provide functions to load js, css and node module assets into LT."
-  (:require [clojure.string :as string]))
+  (:require [clojure.string :as string]
+            [lt.util.broker :as broker]))
 
-(def fpath "Provides access to Node/Electron [path library](https://nodejs.org/api/path.html)." (js/require "path"))
-(def fs "Provides access to Node/Electron [fs library](https://nodejs.org/api/fs.html)." (js/require "fs"))
+(def fpath "Provides access to Node/Electron [path library](https://nodejs.org/api/path.html)." broker/path)
+(def fs "Provides access to Node/Electron [fs library](https://nodejs.org/api/fs.html)." broker/fs)
 
 (def dir "Directory where Light Table is being executed." (str js/__dirname "/.."))
 
@@ -12,7 +13,8 @@
 ;; "/core/...")`. Under the old cljsbuild :simple build this global was present;
 ;; shadow's module scoping drops it, so define it explicitly here (load.cljs is
 ;; required very early, before any of those behaviors run).
-(set! js/window.ltpath dir)
+(when (exists? js/window)
+  (set! js/window.ltpath dir))
 
 (def ^:dynamic *force-reload* "When true, various parts of Light Table will reload."
   false)

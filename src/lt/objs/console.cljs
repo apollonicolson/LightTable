@@ -10,19 +10,20 @@
             [lt.objs.tabs :as tabs]
             [clojure.string :as string]
             [lt.util.dom :refer [$ append empty parents] :as dom]
-            [lt.objs.platform :as platform])
+            [lt.objs.platform :as platform]
+            [lt.util.broker :as broker])
   (:require-macros [singultus.def-macros :refer [defpartial]]
                    [lt.macros :refer [behavior defui]]))
 
 (def console-limit 50)
-(def util-inspect (.-inspect (js/require "util")))
+(def util-inspect (.-inspect broker/util))
 (def logs-dir (files/lt-user-dir "logs"))
 (def core-log (try
                 (when-not (files/exists? logs-dir)
                   (when-not (files/exists? (files/lt-user-dir))
                     (files/mkdir (files/lt-user-dir)))
                   (files/mkdir logs-dir))
-                (.. (js/require "fs") (createWriteStream (files/join logs-dir (str "window" (app/window-number) ".log"))))
+                (.. broker/fs (createWriteStream (files/join logs-dir (str "window" (app/window-number) ".log"))))
                 (catch :default e
                   (.error js/console (str "Failed to initialize the log writer: " e)))))
 

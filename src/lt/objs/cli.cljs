@@ -8,10 +8,11 @@
             [lt.objs.command :as cmd]
             [clojure.string :as string]
             [lt.util.ipc :as ipc]
-            [lt.objs.opener :as opener])
+            [lt.objs.opener :as opener]
+            [lt.util.broker :as broker])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def remote (js/require "@electron/remote"))
+(def remote broker/remote)
 
 (defn open-paths [path-line-pairs add?]
   (doseq [[path line] path-line-pairs

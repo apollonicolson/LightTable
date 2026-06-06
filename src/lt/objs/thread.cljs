@@ -4,10 +4,11 @@
             [lt.objs.files :as files]
             [lt.objs.platform :as platform]
             [lt.objs.console :as console]
-            [cljs.reader :as reader])
+            [cljs.reader :as reader]
+            [lt.util.broker :as broker])
   (:require-macros [lt.macros :refer [behavior background]]))
 
-(def cp (js/require "child_process"))
+(def cp broker/child-process)
 
 (declare worker)
 

@@ -1,15 +1,16 @@
 (ns lt.objs.platform
   "Provide platform-agnostic and platform related fns"
   (:require [lt.object :as object]
-            [lt.util.dom :as dom])
+            [lt.util.dom :as dom]
+            [lt.util.broker :as broker])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (def electron true)
 
-(def fs (js/require "fs"))
-(def remote (js/require "@electron/remote"))
-(def clipboard (.-clipboard (js/require "electron")))
-(def electron-shell (.-shell (js/require "electron")))
+(def fs broker/fs)
+(def remote broker/remote)
+(def clipboard (.-clipboard broker/electron))
+(def electron-shell (.-shell broker/electron))
 
 (defn get-data-path []
   (.getAppPath (.-app remote)))

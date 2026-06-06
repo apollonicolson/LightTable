@@ -10,7 +10,8 @@
             [cljs.reader :as reader]
             [lt.util.load :as load]
             [lt.util.js :refer [now]]
-            [lt.util.cljs :refer [->dottedkw]])
+            [lt.util.cljs :refer [->dottedkw]]
+            [lt.util.broker :as broker])
   (:require-macros [lt.macros :refer [behavior]]))
 
 ;;*********************************************************
@@ -18,7 +19,7 @@
 ;; TODO: The way I did this is awful. Should get cleaned up
 ;;*********************************************************
 
-(def fs (js/require "fs"))
+(def fs broker/fs)
 (def max-depth 10)
 (def watch-interval 1000)
 
