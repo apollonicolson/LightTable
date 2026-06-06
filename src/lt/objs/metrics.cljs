@@ -1,23 +1,20 @@
 (ns lt.objs.metrics
-  "Define and collect usage metrics"
+  "Define and collect usage metrics.
+
+  The original implementation POSTed metrics to LightTable.com's server
+  (app.kodowa.com) via the fetch.remotes RPC mechanism (fetch.macros letrem/remote).
+  That backend is long dead and the fetch library used goog.structs.Map, removed in
+  modern Closure. Network reporting is removed; the local capture API (used!,
+  capture!) is preserved for in-process consumers (keyboard, opener)."
   (:refer-clojure :exclude [send flush])
   (:require [lt.object :as object]
-            [lt.objs.app :as app]
-            [lt.objs.cache :as cache]
-            [fetch.remotes :as remotes]
-            [lt.util.js :refer [now every]])
-  (:require-macros [fetch.macros :refer [letrem remote]]
-                   [lt.macros :refer [behavior]]))
+            [lt.util.js :refer [now]])
+  (:require-macros [lt.macros :refer [behavior]]))
 
-(def server-url "http://app.kodowa.com")
-(set! remotes/remote-uri (str server-url "/_fetch"))
-
-(def active? true)
+(def active? false)
 (def used? false)
 
 (def _metrics (atom []))
-
-(def metric-rate 30000)
 
 (defn used! []
   (set! used? true))
@@ -27,28 +24,17 @@
         mtr (if ex (assoc mtr :ex ex) mtr)]
     (swap! _metrics conj mtr)))
 
-(defn send [mtrs]
-  (remote (metrics! mtrs (cache/fetch :uid))))
+(defn send [_mtrs]
+  ;; no-op: reporting backend removed
+  nil)
 
 (defn flush []
-  (when active?
-    (when-let [cur (seq @_metrics)]
-      (reset! _metrics [])
-      (send cur))))
+  ;; drop accumulated metrics without sending
+  (reset! _metrics []))
 
 (defn init []
-  (when (cache/fetch :no-metrics)
-    (set! active? false))
-  (when active?
-    (letrem [uid (session)]
-            (when-not (cache/fetch :uid)
-              (cache/store! :uid uid))
-            (capture! :session-created)
-            (every metric-rate flush))
-    (every 60000 (fn []
-                   (when used?
-                     (set! used? false)
-                     (capture! :metrics.minute))))))
+  ;; no remote session / reporting; reporting backend removed
+  nil)
 
 (behavior ::init-metrics
           :triggers #{:init}

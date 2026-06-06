@@ -54,18 +54,17 @@
 
 (def server
   (try
-    (let [ ws (.listen io 5678)]
-      (.set ws "log level" 1)
-      (.on (.-server ws) "error" #(do
-                                    (if (= (.-code %) "EADDRINUSE")
-                                      (do
-                                        (.log js/console "Default socket.io port already used. Retrying with a random port.")
-                                        (.listen (.-server ws) 0))
-                                      (throw %))))
-      (.on (.-server ws) "listening" #(do
-                                        (set! port (.-port (.address (.-server ws))))))
-      (.add (aget ws "static") "/lighttable/ws.js" (clj->js {:file (files/lt-home "core/lighttable/ws.js")}))
-      (.on (.-sockets ws) "connection" on-connect)
+    (let [ws (io 5678)
+          http-server (.-httpServer ws)]
+      (.on http-server "error" #(do
+                                  (if (= (.-code %) "EADDRINUSE")
+                                    (do
+                                      (.log js/console "Default socket.io port already used. Retrying with a random port.")
+                                      (.listen http-server 0))
+                                    (throw %))))
+      (.on http-server "listening" #(do
+                                      (set! port (.-port (.address http-server)))))
+      (.on ws "connection" on-connect)
       ws)
     (catch :default e
       (.error js/console "Error starting socket.io server" e))))

@@ -16,7 +16,6 @@
             [lt.util.js :refer [wait]]
             [lt.objs.platform :as platform]
             [cljs.reader :as reader]
-            [fetch.core :as fetch]
             [singultus.core :as crate]
             [singultus.binding :refer [bound]]
             [lt.util.kahn :as kahn]
@@ -226,14 +225,19 @@
   (files/save metadata-cache (js/JSON.stringify (clj->js cache))))
 
 (defn latest-metadata-sha []
-  (fetch/xhr [:get metadata-commits] {}
-             (fn [data]
+  ;; native fetch replaces fetch.core/xhr (that lib used goog.structs.Map,
+  ;; removed in modern Closure).
+  (-> (js/fetch metadata-commits)
+      (.then (fn [r] (.text r)))
+      (.then (fn [data]
                (when-let [parsed (try (js/JSON.parse data)
                                    (catch :default e
                                      (console/error (str "Invalid JSON response from " metadata-commits ": " (pr-str data)))))]
                  (let [sha (-> (aget parsed 0)
                                (aget "sha"))]
-                   (object/raise manager :metadata.sha sha))))))
+                   (object/raise manager :metadata.sha sha)))))
+      (.catch (fn [e]
+                (console/error (str "Failed to fetch " metadata-commits ": " e))))))
 
 (defn download-metadata [sha]
   (let [tmp-gz (files/lt-user-dir "metadata-temp.tar.gz")

@@ -392,7 +392,7 @@
                         (let [orig (:active-obj @this)]
                           (object/raise orig :close))
                         (catch :default e
-                          (js/lt.objs.console.error e)))))
+                          (js/console.error e)))))
 
 (behavior ::on-destroy-objs
           :triggers #{:destroy}
@@ -559,7 +559,11 @@
 (behavior ::init-sortable
           :triggers #{:init}
           :reaction (fn [app]
-                      (js/initSortable js/window)))
+                      ;; pass lt.util.dom explicitly: shadow scopes namespaces so
+                      ;; dragdrop.js can no longer read the `lt` global itself.
+                      ;; (a bare namespace alias isn't a value; reference the
+                      ;; compiled namespace object directly via js/ interop.)
+                      (js/initSortable js/window js/lt.util.dom)))
 
 (behavior ::init
           :triggers #{:init}

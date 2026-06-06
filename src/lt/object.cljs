@@ -108,13 +108,14 @@
   (get (->triggers (tags->behaviors ts)) trig))
 
 (defn safe-report-error [e]
-  ;; This check is necessary because this can be called before
-  ;; the console ns has been loaded
-  (if js/lt.objs.console
-    (js/lt.objs.console.error e)
-    (.error js/console (if (string? e)
-                         e
-                         (.-stack e)))))
+  ;; Was (if js/lt.objs.console (js/lt.objs.console.error e) ...): that global
+  ;; path only existed under cljsbuild's :simple globals and throws a
+  ;; ReferenceError ("lt is not defined") under shadow-cljs's module system —
+  ;; masking the real error inside the error handler itself. Use the browser
+  ;; console directly (robust). TODO: late-bind an in-app console reporter via tap>.
+  (.error js/console (if (string? e)
+                       e
+                       (.-stack e))))
 
 (declare raise)
 
@@ -475,7 +476,6 @@
 (behavior ::report-time
           :triggers #{:object.behavior.time}
           :reaction (fn [this beh time trigger]
-                      (when js/lt.objs.console
-                        (js/lt.objs.console.log (str beh " triggered by "
-                                                     trigger " took "
-                                                     time "ms")))))
+                      (.log js/console (str beh " triggered by "
+                                            trigger " took "
+                                            time "ms"))))

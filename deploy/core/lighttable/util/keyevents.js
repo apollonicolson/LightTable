@@ -718,7 +718,12 @@
         };
 
         /** START LIGHT TABLE ADDED FUNCTION **/
-        function _handleKeyUp() {
+        // Assign to `self` (mirroring self._handleKey above). The original left this
+        // as an unassigned local, so Mousetrap.prototype.handleKeyUp's
+        // `self._handleKeyUp.apply(self, arguments)` threw a TypeError on any keyup
+        // that fired before keyboard.cljs installed its prototype override (during
+        // init). This empty default is overridden by keyboard.cljs at load.
+        self._handleKeyUp = function() {
 
         };
         /** END LIGHT TABLE ADDED FUNCTION **/

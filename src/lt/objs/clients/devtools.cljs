@@ -8,7 +8,6 @@
             [lt.objs.console :as console]
             [lt.objs.app :as app]
             [lt.objs.clients :as clients]
-            [fetch.core :as fetch]
             [singultus.core :as crate]
             [lt.util.dom :as dom]
             [lt.util.js :refer [every wait ->clj]]
@@ -261,14 +260,20 @@
           :triggers #{:reconnect!}
           :reaction (fn [this]
                       (object/raise this :disconnect)
-                      (fetch/xhr devtools-url {}
-                                 (fn [d]
+                      ;; native fetch replaces fetch.core/xhr (that lib used
+                      ;; goog.structs.Map, removed in modern Closure). devtools-url
+                      ;; is a localhost endpoint, so no CORS concern.
+                      (-> (js/fetch devtools-url)
+                          (.then (fn [r] (.text r)))
+                          (.then (fn [d]
                                    (if-let [url (-> (js/JSON.parse d)
                                                     (js->clj :keywordize-keys true)
                                                     (find-debugger-info (:url @this))
                                                     (:webSocketDebuggerUrl))]
                                      (object/raise this :connect! url)
-                                     (wait 1000 #(object/raise this :reconnect!)))))))
+                                     (wait 1000 #(object/raise this :reconnect!)))))
+                          (.catch (fn [_]
+                                    (wait 1000 #(object/raise this :reconnect!)))))))
 
 (behavior ::connect-on-init
           :triggers #{:init}

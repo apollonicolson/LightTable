@@ -7,7 +7,7 @@
 (def electron true)
 
 (def fs (js/require "fs"))
-(def remote (.-remote (js/require "electron")))
+(def remote (js/require "@electron/remote"))
 (def clipboard (.-clipboard (js/require "electron")))
 (def electron-shell (.-shell (js/require "electron")))
 

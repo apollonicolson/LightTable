@@ -9,7 +9,7 @@
             [clojure.string :as string])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def remote (.-remote (js/require "electron")))
+(def remote (js/require "@electron/remote"))
 (def Menu (.-Menu remote))
 (def MenuItem (.-MenuItem remote))
 
@@ -25,7 +25,7 @@
                                       (when-let [func (:click opts)]
                                         (func))
                                       (catch :default e
-                                        (js/lt.objs.console.error e)))))
+                                        (js/console.error e)))))
                opts)]
     (MenuItem. (clj->js opts))))
 

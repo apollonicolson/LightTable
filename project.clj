@@ -1,18 +1,25 @@
 (defproject lighttable "0.9.0"
   :description "Light Table is a next generation code editor that connects you to your creation with instant feedback. Light Table is very customizable and can display anything a Chromium browser can."
   :url "http://www.lighttable.com/"
+  ;; lein is the fallback build; shadow-cljs.edn is primary. Keep dep set in sync.
+  ;; fetch removed (migrated to native js/fetch); jaxb-api removed (was a JDK-11
+  ;; javax.xml.bind workaround no longer needed on Java 21 + modern Closure).
   :dependencies [[org.clojure/clojure "1.12.5"]
                  [org.clojars.prertik/singultus "1.0.0"]
-                 [org.clojars.prertik/fetch "0.4.0" :exclusions [org.clojure/clojure noir]]
                  [org.clojure/clojurescript "1.12.145"
                   :exclusions [org.apache.ant/ant]]
-                 [javax.xml.bind/jaxb-api "2.4.0-b180830.0359"]]
+                 [cljs-bean "1.9.0"]
+                 [metosin/malli "0.20.1"]]
 
   :jvm-opts ["-Xmx1g" "-XX:+UseG1GC"] ; cljsbuild eats memory
   :cljsbuild {:builds [{:id "app"
                         :source-paths ["src"]
                         :compiler {:optimizations :simple
                                    ;; :externs dropped — files never existed on disk and :simple does not require them; CLJS 1.12 aborts on missing externs
+                                   ;; :process-shim false — CLJS emits `var process = {env:{}}` at top level by
+                                   ;; default, which clobbers Electron's real Node `process` global in the
+                                   ;; renderer (breaks process.platform and Electron's own renderer_init).
+                                   :process-shim false
                                    :source-map "deploy/core/lighttable/bootstrap.js.map"
                                    :output-to "deploy/core/lighttable/bootstrap.js"
                                    :output-dir "deploy/core/lighttable/cljs/"

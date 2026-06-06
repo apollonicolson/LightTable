@@ -11,9 +11,14 @@
             [lt.util.ipc :as ipc])
   (:require-macros [lt.macros :refer [behavior]]))
 
-(def remote (.-remote (js/require "electron")))
+(def remote (js/require "@electron/remote"))
 (def win (.getCurrentWindow remote))
 (def frame (.-webFrame (js/require "electron")))
+;; screen is a main-process module: since Electron 6 it is undefined on the
+;; renderer's require("electron") and must be reached via @electron/remote
+;; (same reason getCurrentWindow above goes through remote). Bare-require here
+;; left `screen` nil → (.getAllDisplays screen) threw in ::restore-position-on-init.
+(def screen (.-screen remote))
 (def closing true)
 (def default-zoom 1)
 
@@ -76,6 +81,19 @@
             x)]
     (max x cap)))
 
+(defn on-screen?
+  "True if point (x,y) falls within the bounds of some connected display.
+  Guards against restoring a window position that is off-screen on the
+  current display config (e.g. a monitor was unplugged or resolution shrank)."
+  [x y]
+  (boolean
+    (some (fn [d]
+            (let [b (.-bounds d)
+                  bx (.-x b) by (.-y b)]
+              (and (>= x bx) (< x (+ bx (.-width b)))
+                   (>= y by) (< y (+ by (.-height b))))))
+          (array-seq (.getAllDisplays screen)))))
+
 (defn zoom-level []
   (when (not= (.getZoomFactor frame) 0)
     (.getZoomFactor frame)))
@@ -131,7 +149,14 @@
           :reaction (fn [this]
                       (when js/localStorage.width
                         (.setSize win (ensure-greater js/localStorage.width 400) (ensure-greater js/localStorage.height 400))
-                        (.setPosition win (ensure-greater js/localStorage.x 0) (ensure-greater js/localStorage.y 0)))))
+                        (let [x (ensure-greater js/localStorage.x 0)
+                              y (ensure-greater js/localStorage.y 0)]
+                          ;; Only restore position if it lands on a connected
+                          ;; display; otherwise center the window so it is always
+                          ;; visible rather than restored off-screen.
+                          (if (on-screen? x y)
+                            (.setPosition win x y)
+                            (.center win))))))
 
 (behavior ::on-show-bind-navigate
           :triggers #{:show}

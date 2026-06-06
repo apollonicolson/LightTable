@@ -1,0 +1,8 @@
+{
+  "name": "lighttable-build",
+  "private": true,
+  "description": "Build tooling (shadow-cljs) for the LightTable CLJS renderer.",
+  "devDependencies": {
+    "shadow-cljs": "3.4.11"
+  }
+}

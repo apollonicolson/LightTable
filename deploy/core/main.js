@@ -7,8 +7,14 @@ const {
     ipcMain
 } = require('electron');
 
+// @electron/remote replaces Electron's built-in remote module, which was
+// deprecated in Electron 12 and removed in 14. initialize() once in main;
+// enable() per WebContents so the renderer can require('@electron/remote').
+const remoteMain = require('@electron/remote/main');
+remoteMain.initialize();
 
-let yargs = require('yargs');
+
+const { parseArgs: nodeParseArgs } = require('node:util');
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the javascript object is GCed.
@@ -23,6 +29,7 @@ function createWindow() {
     browserWindowOptions.icon = __dirname + '/' + browserWindowOptions.icon;
     let window = new BrowserWindow(browserWindowOptions);
     windows[window.id] = window;
+    remoteMain.enable(window.webContents);
     window.focus();
     window.webContents.on("will-navigate", function(e) {
         e.preventDefault();
@@ -92,18 +99,40 @@ function onReady() {
 }
 
 function parseArgs() {
-    yargs.usage("\nLight Table " + app.getVersion() + "\n" +
+    let usage = "\nLight Table " + app.getVersion() + "\n" +
         // TODO: Use a consistent name for executables or vary executable
         // name per platform. $0 currently gives an unwieldy name
         "Usage: light [options] [path ...]\n\n" +
         "Paths are either a file or a directory.\n" +
-        "Files can take a line number e.g. file:line.");
-    yargs.alias('h', 'help').boolean('h').describe('h', 'Print help');
-    yargs.alias('a', 'add').boolean('a').describe('a', 'Add path(s) to workspace');
-    global.browserParsedArgs = yargs.parse(process.argv);
+        "Files can take a line number e.g. file:line.\n\n" +
+        "Options:\n" +
+        "  -h, --help  Print help                               [boolean]\n" +
+        "  -a, --add   Add path(s) to workspace                 [boolean]";
+
+    // strict:false so unknown options (Electron/Chromium switches such as
+    // --user-data-dir, --remote-debugging-port, --no-sandbox that arrive in
+    // process.argv) are tolerated rather than throwing ERR_PARSE_ARGS_UNKNOWN_OPTION
+    // and crashing the main process — yargs ignored unknowns implicitly.
+    let parsed = nodeParseArgs({
+        args: process.argv.slice(2),
+        options: {
+            help: { type: 'boolean', short: 'h' },
+            add: { type: 'boolean', short: 'a' }
+        },
+        allowPositionals: true,
+        strict: false
+    });
+
+    // Preserve a yargs-compatible shape for the renderer
+    // (src/lt/objs/cli.cljs reads .help, .add and ._ off this global).
+    global.browserParsedArgs = {
+        help: parsed.values.help || false,
+        add: parsed.values.add || false,
+        _: parsed.positionals
+    };
 
     if (global.browserParsedArgs.help) {
-        yargs.showHelp();
+        console.log(usage);
         process.exit(0);
     }
 }

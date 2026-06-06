@@ -1,6 +1,9 @@
-function initSortable(window) {
+// `dom` (lt.util.dom) is passed in by the caller. Under the old cljsbuild
+// :simple build every cljs namespace was a window global, so this file could
+// read `lt.util.dom` directly; shadow-cljs scopes namespaces in a module IIFE,
+// so the global `lt` no longer exists here and must be injected.
+function initSortable(window, dom) {
   var dragging, placeholders = [];
-  var dom = lt.util.dom;
   var placeholder = dom.make('<li class="sortable-placeholder">')[0];
   var sortable = function(me, options) {
     var index, items = dom.children(me);

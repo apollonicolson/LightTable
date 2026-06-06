@@ -16,6 +16,7 @@
             [lt.objs.keyboard :as keyboard]
             [lt.objs.notifos :as notifos]
             [lt.objs.clients.devtools :as devtools]
+            [lt.plugins.watches :as watches]
             [lt.util.dom :as dom]
             [clojure.string :as string]
             [singultus.core :as crate]
@@ -23,7 +24,12 @@
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 (def utils (js-obj))
-(set! js/lttools utils)
+;; Assign as an explicit window property. shadow-cljs emits strict-mode output
+;; where a bare `(set! js/lttools ...)` compiles to `lttools = ...` on an
+;; undeclared global → ReferenceError that aborts bundle load before
+;; lt.objs.app/init() runs (the splash-only / dead-UI bug). window.lttools is
+;; still reachable as the bare global `lttools` from the devtools console.
+(set! js/window.lttools utils)
 
 (defn check-http [url]
   (if (and (= (.indexOf url "http") -1)
@@ -308,7 +314,7 @@
           :reaction (fn [this msg]
                       (when-let [ed (clients/cb->obj (:cb msg))]
                         (when (-> msg :data :path)
-                          (devtools/changelive! ed (-> msg :data :path) (js/lt.plugins.watches.watched-range ed nil nil js/lt.objs.langs.js.src->watch)
+                          (devtools/changelive! ed (-> msg :data :path) (watches/watched-range ed nil nil)
                                                 (fn [res]
                                                   ;;TODO: check for exception, otherwise, assume success
                                                   (object/raise ed :editor.eval.js.change-live.success)

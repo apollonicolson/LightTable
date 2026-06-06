@@ -8,12 +8,7 @@
             [lt.objs.files :as files]
             [lt.objs.tabs :as tabs]
             [lt.objs.deploy :as deploy])
-  (:require-macros [lt.macros :refer [behavior defui]]))
-
-(defui check-button []
-       [:div.button "Check for updates"]
-       :click (fn []
-                (deploy/check-version true)))
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (behavior ::on-show-refresh-eds
           :triggers #{:show}
@@ -41,7 +36,6 @@
                              [:dt "Binary version"] [:dd (deploy/binary-version)]
                              [:dt "Plugins directory" [:dd (files/lt-user-dir "plugins")]]
                              ]
-                            (check-button)
                             ]
                            (editor/->elem main)
                            ]

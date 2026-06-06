@@ -7,6 +7,13 @@
 
 (def dir "Directory where Light Table is being executed." (str js/__dirname "/.."))
 
+;; Expose `dir` as the global `ltpath`. Several namespaces (search, auto-complete,
+;; langs.behaviors, sidebar.navigate) build node require() paths via `(str js/ltpath
+;; "/core/...")`. Under the old cljsbuild :simple build this global was present;
+;; shadow's module scoping drops it, so define it explicitly here (load.cljs is
+;; required very early, before any of those behaviors run).
+(set! js/window.ltpath dir)
+
 (def ^:dynamic *force-reload* "When true, various parts of Light Table will reload."
   false)
 

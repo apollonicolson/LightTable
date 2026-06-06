@@ -5,7 +5,7 @@
             [lt.objs.app :as app])
   (:require-macros [lt.macros :refer [behavior defui]]))
 
-(def remote (.-remote (js/require "electron")))
+(def remote (js/require "@electron/remote"))
 (def dialog (.-dialog remote))
 
 (defn dir [obj event]

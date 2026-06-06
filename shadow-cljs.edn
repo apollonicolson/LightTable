@@ -1,0 +1,108 @@
+;; shadow-cljs build for LightTable's CLJS renderer.
+;; Replaces the lein-cljsbuild "app" build. Output goes to a new js/ dir so the
+;; legacy bootstrap.js stays intact during the transition.
+;;
+;; shadow manages Clojure + ClojureScript versions itself; only the extra libs
+;; are declared here. Runtime npm/Electron modules are still loaded via js/require
+;; at runtime (nodeIntegration), so shadow does not bundle them yet — that comes
+;; with the native-deps migration.
+;;
+;; NOTE: lein-cljsbuild :simple compiled *every* file in src. LightTable registers
+;; behaviors at namespace-load via the BOT system, so most namespaces are NOT in
+;; the static require graph from lt.objs.app. They must be listed as :entries or
+;; they won't be present at runtime. The list below is every .cljs namespace in src.
+{:source-paths ["src" "test"]
+
+ :dependencies
+ [[org.clojars.prertik/singultus "1.0.0"]
+  ;; Queued for the planned migrations (audit §3/§7): cljs-bean replaces the
+  ;; aget-on-objects + the String/Array prototype monkeypatch; malli for schemas
+  ;; at res/settings/protocol boundaries. Imported now; consumed as that work lands.
+  [cljs-bean "1.9.0"]
+  [metosin/malli "0.20.1"]]
+
+ :builds
+ {:app
+  {:target     :browser
+   :output-dir "deploy/core/lighttable/js"
+   :asset-path "lighttable/js"
+   :modules
+   {:bootstrap
+    {:init-fn lt.objs.app/init
+     :entries [lt.object
+               lt.objs.animations
+               lt.objs.app
+               lt.objs.bottombar
+               lt.objs.browser
+               lt.objs.cache
+               lt.objs.canvas
+               lt.objs.cli
+               lt.objs.clients
+               lt.objs.clients.devtools
+               lt.objs.clients.local
+               lt.objs.clients.tcp
+               lt.objs.clients.ws
+               lt.objs.command
+               lt.objs.connector
+               lt.objs.console
+               lt.objs.context
+               lt.objs.deploy
+               lt.objs.dev
+               lt.objs.dialogs
+               lt.objs.docs
+               lt.objs.document
+               lt.objs.editor
+               lt.objs.editor.file
+               lt.objs.editor.pool
+               lt.objs.eval
+               lt.objs.files
+               lt.objs.find
+               lt.objs.intro
+               lt.objs.jump-stack
+               lt.objs.keyboard
+               lt.objs.langs.behaviors
+               lt.objs.langs.keymap
+               lt.objs.menu
+               lt.objs.metrics
+               lt.objs.notifos
+               lt.objs.opener
+               lt.objs.platform
+               lt.objs.plugins
+               lt.objs.popup
+               lt.objs.proc
+               lt.objs.search
+               lt.objs.settings
+               lt.objs.sidebar
+               lt.objs.sidebar.clients
+               lt.objs.sidebar.command
+               lt.objs.sidebar.navigate
+               lt.objs.sidebar.workspace
+               lt.objs.statusbar
+               lt.objs.style
+               lt.objs.tabs
+               lt.objs.thread
+               lt.objs.version
+               lt.objs.workspace
+               lt.plugins.auto-complete
+               lt.plugins.auto-paren
+               lt.plugins.doc
+               lt.plugins.watches
+               lt.util.cljs
+               lt.util.dom
+               lt.util.events
+               lt.util.ipc
+               lt.util.js
+               lt.util.kahn
+               lt.util.load
+               lt.util.style]}}
+   :compiler-options {:optimizations :simple
+                      :infer-externs false}
+   :devtools   {:enabled false}}
+
+  ;; node-test: for dependency-free / pure namespaces (no Electron/DOM).
+  ;; Run: npx shadow-cljs compile test && node target/node-tests.js
+  ;; (Electron/DOM-coupled namespaces need a :browser-test build instead.)
+  :test
+  {:target    :node-test
+   :output-to "target/node-tests.js"
+   :ns-regexp "-test$"}}}

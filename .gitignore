@@ -14,3 +14,9 @@
 /deploy/core/lighttable/bootstrap.js
 /deploy/core/lighttable/bootstrap.js.map
 /deploy/core/lighttable/cljs/
+# shadow-cljs build output + caches + node deps
+/node_modules/
+/.shadow-cljs/
+/deploy/core/lighttable/js/
+/deploy/core/logs/
+/deploy/core/ltcache/

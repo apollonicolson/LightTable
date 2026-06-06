@@ -52,7 +52,7 @@
   (keyword (string/join "." (map name (filter identity args)))))
 
 (defn js->clj [& args]
-  (js/lt.objs.console.error "lt.util.cljs/js->clj is deprecated and will be removed in 0.9.0. Use js->clj instead")
+  (js/console.error "lt.util.cljs/js->clj is deprecated and will be removed in 0.9.0. Use js->clj instead")
   (apply cljs.core/js->clj args))
 
 (defn str-contains? [str x]

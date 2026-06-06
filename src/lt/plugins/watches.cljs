@@ -19,7 +19,11 @@
     (object/update! this [:widgets] assoc [line type] res-obj)
     res-obj))
 
-(defn watched-range [ed start end src->watch]
+;; src->watch param removed: it was always ignored here (source transformation
+;; runs through the :watch.src+ / :watch.custom.src+ raise-reduce below), and its
+;; only caller passed a dangling global ref (lt.objs.langs.js/src->watch) to a JS
+;; language plugin not bundled in this build.
+(defn watched-range [ed start end]
   (let [doc (.Doc js/CodeMirror (ed/->val ed))
         range (when start
                 (ed/mark doc start (update-in end [:ch] inc) {:inclusiveLeft true :inclusiveRight true}))

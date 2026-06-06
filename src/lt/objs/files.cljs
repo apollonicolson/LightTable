@@ -1,7 +1,7 @@
 (ns lt.objs.files
   "Provide fns for doing file related operations. A number of fns
   use the node [fs library](https://nodejs.org/api/fs.html) or [path library](https://nodejs.org/api/path.html)."
-  (:refer-clojure :exclude [open exists?])
+  (:refer-clojure :exclude [open exists? resolve])
   (:require [lt.object :as object]
             [lt.util.load :as load]
             [clojure.string :as string]
@@ -11,8 +11,6 @@
 
 (def ^:private fs (js/require "fs"))
 (def ^:private fpath (js/require "path"))
-;; https://github.com/shelljs/shelljs
-(def ^:private shell (load/node-module "shelljs"))
 ;; https://github.com/electron/electron/blob/master/docs/api/shell.md
 (def ^:private electron-shell (.-shell (js/require "electron")))
 (def ^:private os (js/require "os"))
@@ -58,7 +56,7 @@
           :triggers #{:files.open.error}
           :reaction (fn [this path e]
                       ;; Do not log stacktrace because it would be too much noise if multiple file openings fail
-                      (js/lt.objs.console.error (str "Failed to open path '" path "' with error: " e))))
+                      (js/console.error (str "Failed to open path '" path "' with error: " e))))
 
 (def ^:private files-obj (object/create (object/object* ::files
                                                         :tags [:files]
@@ -408,7 +406,7 @@
   "Delete file or directory from filesystem."
   [path]
   (if (dir? path)
-    (.rm shell "-r" path)
+    (.rmSync fs path #js {:recursive true :force true})
     (.unlinkSync fs path)))
 
 (defn move!
@@ -420,7 +418,7 @@
   "Copy file or directory to given `path`."
   [from to]
   (if (dir? from)
-    (.cp shell "-R" from to)
+    (.cpSync fs from to #js {:recursive true :force true})
     (save to (:content (open-sync from)))))
 
 (defn mkdir
@@ -467,30 +465,36 @@
   * `:files` - When set only returns files
   * `:dirs` - When set only return directories"
   [path opts]
-  (try
-    (let [fs (remove #(re-seq ignore-pattern %) (map (partial ->file|dir path) (.readdirSync fs path)))]
-      (cond
-       (:files opts) (filter #(file? (join path %)) fs)
-       (:dirs opts) (filter #(dir? (join path %)) fs)
-       :else fs))
-    (catch :default e
-      (js/lt.objs.console.error e))))
+  (if-not (exists? path)
+    ()
+    (try
+      (let [fs (remove #(re-seq ignore-pattern %) (map (partial ->file|dir path) (.readdirSync fs path)))]
+        (cond
+         (:files opts) (filter #(file? (join path %)) fs)
+         (:dirs opts) (filter #(dir? (join path %)) fs)
+         :else fs))
+      (catch :default e
+        (js/console.error e)))))
 
 (defn full-path-ls
   "Return directory's files as full paths."
   [path]
-  (try
-    (doall (map (partial join path) (.readdirSync fs path)))
-    (catch :default e
-      (js/lt.objs.console.error e))))
+  (if-not (exists? path)
+    ()
+    (try
+      (doall (map (partial join path) (.readdirSync fs path)))
+      (catch :default e
+        (js/console.error e)))))
 
 (defn dirs
   "Return directory's directories."
   [path]
-  (try
-    (filter dir? (map (partial join path) (.readdirSync fs path)))
-    (catch :default e
-      (js/lt.objs.console.error e))))
+  (if-not (exists? path)
+    ()
+    (try
+      (filter dir? (map (partial join path) (.readdirSync fs path)))
+      (catch :default e
+        (js/console.error e)))))
 
 (defn home
   "Return users' home directory (e.g. ~/) or path under it."
