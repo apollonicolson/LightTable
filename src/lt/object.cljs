@@ -2,14 +2,15 @@
   "Define core of BOT architecture and provide fns for manipulating objects,
   behaviors and tags"
   (:refer-clojure :exclude [set!])
-  (:require [singultus.core :as crate]
+  (:require [lt.object.resolve :as resolve]
+            [singultus.core :as crate]
             [clojure.set :as set]
             [clojure.string :as string]
             [singultus.binding :refer [sub-swap! subatom sub-reset! deref?]]
             [lt.util.cljs :as cljs]
             [lt.util.dom :refer [replace-with] :as dom]
             [lt.util.js :refer [throttle debounce]])
-  (:require-macros [lt.macros :refer [behavior with-time aloop]]))
+  (:require-macros [lt.macros :refer [behavior with-time]]))
 
 ;; HEART of BOT Architecture!
 (def ^:private obj-id
@@ -61,51 +62,24 @@
 (defn- ->behavior [beh]
   (@behaviors (->behavior-name beh)))
 
+;; The behavior-resolution core lives in lt.object.resolve (DOM-free, registry-
+;; parameterized, characterization-tested). These wrappers preserve the historical
+;; private signatures and deref the registry atoms at call time exactly as before.
 (defn- ->triggers [behs]
-  (let [result (atom (transient {}))]
-    (doseq [beh behs
-            t (:triggers (->behavior beh))]
-      (swap! result assoc! t (conj (or (get @result t) '[]) beh)))
-    (persistent! @result)))
+  (resolve/triggers @behaviors behs))
 
 (defn- specificity-sort
-  ([xs] (specificity-sort xs nil))
-  ([xs dir]
-   (let [arr #js []]
-     (doseq [x xs]
-       (.push arr #js [(.-length (.split (str x) ".")) (str x) x]))
-     (.sort arr)
-     (when-not dir (.reverse arr))
-     (aloop [i arr] (aset arr i (aget arr i 2)))
-     arr)))
+  ([xs] (resolve/specificity-sort xs nil))
+  ([xs dir] (resolve/specificity-sort xs dir)))
 
 (defn- ts->negations [ts]
-  (let [seen (js-obj)]
-    (doseq [beh (apply concat (map @negated-tags ts))]
-      (aset seen (->behavior-name beh) true))
-    seen))
+  (resolve/negations @negated-tags ts))
 
 (defn- tags->behaviors [ts]
-  (let [duped (apply concat (map @tags (specificity-sort ts)))
-        de-duped (reduce
-                   (fn [res cur]
-                     (if (aget (:seen res) (->behavior-name cur))
-                       res
-                       (let [beh (->behavior cur)]
-                         (when (:exclusive beh)
-                           (when (coll? (:exclusive beh))
-                             (doseq [exclude (:exclusive beh)]
-                               (aset (:seen res) exclude true)))
-                           (aset (:seen res) (->behavior-name cur) true))
-                         (conj! (:final res) cur)
-                         res)))
-                   {:seen (ts->negations ts)
-                    :final (transient [])}
-                   duped)]
-    (reverse (persistent! (:final de-duped)))))
+  (resolve/tags->behaviors @tags @behaviors @negated-tags ts))
 
 (defn- trigger->behaviors [trig ts]
-  (get (->triggers (tags->behaviors ts)) trig))
+  (resolve/trigger->behaviors @tags @behaviors @negated-tags trig ts))
 
 (defn safe-report-error [e]
   ;; Was (if js/lt.objs.console (js/lt.objs.console.error e) ...): that global
