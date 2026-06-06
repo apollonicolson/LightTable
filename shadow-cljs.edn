@@ -11,7 +11,11 @@
 ;; behaviors at namespace-load via the BOT system, so most namespaces are NOT in
 ;; the static require graph from lt.objs.app. They must be listed as :entries or
 ;; they won't be present at runtime. The list below is every .cljs namespace in src.
-{:source-paths ["src" "test"]
+{:source-paths ["src" "test"
+                ;; M3/M4 substrate spike: sig (cell/res) from the sibling repo.
+                ;; SPIKE PATH — proper packaging (git dep / vendor / clojars) is a
+                ;; follow-up decision before this is committed. Needs npm alien-signals.
+                "../../../hbtcomputers.com.au/sig/cljc/src"]
 
  :dependencies
  [[org.clojars.prertik/singultus "1.0.0"]

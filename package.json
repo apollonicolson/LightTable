@@ -4,5 +4,8 @@
   "description": "Build tooling (shadow-cljs) for the LightTable CLJS renderer.",
   "devDependencies": {
     "shadow-cljs": "3.4.11"
+  },
+  "dependencies": {
+    "alien-signals": "^3.2.1"
   }
 }
