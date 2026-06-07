@@ -10,7 +10,9 @@
   publishDiagnostics is rendered into the matching editor's CM6 diagnostics layer."
   (:require [lt.lsp.service :as svc]
             [lt.lsp.node-transport :as nt]
+            [lt.lsp.completion :as completion]
             [defport.lsp.client :as lsp]
+            [lt.object :as object]
             [lt.objs.editor :as editor]))
 
 (defonce ^:private state
@@ -53,6 +55,21 @@
   [editor uri language-id text]
   (swap! state assoc-in [:editors uri] editor)
   (ensure-connected! (fn [s] (svc/open-doc! s uri language-id text)))
+  nil)
+
+(defn complete!
+  "Request completion at LSP position (line, character) for the doc `uri` shown in
+  `editor`; on response, cache the mapped hint items on the editor under
+  :lsp/completions (the auto-complete ::lsp-hints source reads them) and call
+  `(cb hints-js-array)`."
+  [editor uri line character cb]
+  (ensure-connected!
+   (fn [s]
+     (svc/completion s uri line character
+                     (fn [result]
+                       (let [hints (completion/lsp-items->hints result)]
+                         (object/merge! editor {:lsp/completions hints})
+                         (when cb (cb hints)))))))
   nil)
 
 (defn change! [uri text]

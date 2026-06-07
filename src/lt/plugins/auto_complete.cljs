@@ -116,6 +116,16 @@
           :reaction (fn [this hints]
                       (concat (::hints @this) hints)))
 
+;; LSP completion source (ADR 0010 slice 3): include the hint items cached on the
+;; editor as :lsp/completions by lt.lsp.connector. Decoupled via the data key —
+;; auto-complete reads it; the connector (which owns the LSP client) writes it.
+(behavior ::lsp-hints
+          :triggers #{:hints+}
+          :reaction (fn [this hints]
+                      (if-let [lsp (:lsp/completions @this)]
+                        (concat (array-seq lsp) hints)
+                        hints)))
+
 (behavior ::escape!
           :triggers #{:escape!}
           :reaction (fn [this force?]

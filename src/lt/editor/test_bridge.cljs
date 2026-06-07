@@ -128,6 +128,21 @@
                           (lsp-conn/open! e uri "clojure" (editor/->val e)))
                         nil)
        :lspReset      (fn [] (lsp-conn/reset-all!) nil)
+       ;; request LSP completion at (line,character) for the active editor; resolves
+       ;; (a promise) with the completion strings, and caches them as :lsp/completions.
+       :lspComplete   (fn [uri line character]
+                        (js/Promise.
+                         (fn [resolve _reject]
+                           (if-let [e (ed)]
+                             (lsp-conn/complete! e uri line character
+                                                 (fn [hints]
+                                                   (resolve (.map hints (fn [h] (.-completion h))))))
+                             (resolve #js [])))))
+       ;; raise :hints+ on the active editor and return the merged completion
+       ;; strings — proves the ::lsp-hints source is wired into the real hint flow.
+       :editorHints   (fn [] (when-let [e (ed)]
+                               (clj->js (map #(.-completion %)
+                                             (object/raise-reduce e :hints+ [])))))
        ;; drive the full eval manager path (::inline-results etc.) on the active editor
        :evalResult    (fn [text line] (when-let [e (ed)] (object/raise e :editor.result text {:line line} {:type :inline})) nil)
        :evalException (fn [ex line] (when-let [e (ed)] (object/raise e :editor.exception ex {:line line})) nil)

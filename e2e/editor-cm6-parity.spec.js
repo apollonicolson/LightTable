@@ -368,3 +368,22 @@ test('CM6 live — diagnostics from a (fake) LSP server via the connector', asyn
   expect(await win.locator('.cm-diag-error').count()).toBeGreaterThanOrEqual(1);
   await lt('lspReset');
 });
+
+// ADR 0010 slice 3 (live) — LSP completion flows into the real hint list. The
+// connector requests completion from the (fake) server, maps the items, caches
+// them on the editor, and the ::lsp-hints :hints+ source merges them into the
+// live hinter — proven by raising :hints+ and seeing the server's items.
+test('CM6 live — LSP completion via the connector + hint source', async () => {
+  const fakeServer = path.join(ROOT, 'test/fixtures/fake-lsp-server.js');
+  await lt('lspReset');
+  await lt('openCm6', '(ns a)\n');
+  await lt('lspOpenActive', ['node', fakeServer], 'file:///tmp/comp-a.clj'); // configure + open
+  // completion round-trips from the server, mapped + sorted by sortText
+  const items = await lt('lspComplete', 'file:///tmp/comp-a.clj', 0, 0);
+  expect(items).toEqual(['def', 'defn']);
+  // and they're wired into the real :hints+ flow (not just fetched)
+  const hints = await lt('editorHints');
+  expect(hints).toContain('def');
+  expect(hints).toContain('defn');
+  await lt('lspReset');
+});
