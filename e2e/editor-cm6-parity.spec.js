@@ -118,6 +118,16 @@ test('CM6 live — modes: clojure via legacy-modes bridge (the default content)'
   expect(await lt('val')).toBe('(defn foo [x] (+ x 1))');
 });
 
+test('CM6 live — commands (pool.cljs bindings → CM6: deleteLine / goLineEnd)', async () => {
+  await lt('setVal', 'one\ntwo\nthree');
+  await lt('moveCursor', { line: 1, ch: 0 });
+  await lt('execCommand', 'deleteLine');
+  expect(await lt('val')).toBe('one\nthree');   // CM6 deleteLine
+  await lt('moveCursor', { line: 0, ch: 0 });
+  await lt('execCommand', 'goLineEnd');          // cursor-motion (needs layout)
+  expect(await lt('cursor')).toEqual({ line: 0, ch: 3 });
+});
+
 test('CM6 live — events (edits raise :change to LightTable behaviors)', async () => {
   const before = await lt('changeCount');
   await lt('replace', { line: 0, ch: 0 }, { line: 0, ch: 0 }, 'Q');

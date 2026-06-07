@@ -24,6 +24,7 @@
             [lt.editor.cm6 :as cm6]
             [lt.editor.cm6.options :as cm6-options]
             [lt.editor.cm6.modes :as cm6-modes]
+            [lt.editor.cm6.commands :as cm6-commands]
             [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
@@ -63,6 +64,23 @@
   (if (and (satisfies? IDeref e) (:backend @e))
     (:backend @e)
     (be/cm5-backend (->cm-ed e))))
+
+(defn exec-command
+  "Run a named editor command and return whether it was HANDLED — CM6: the
+  StateCommand's boolean; CM5: not CodeMirror.Pass. `args` apply to CM5 only (CM6
+  StateCommands take just the view). The seam behind pool.cljs's command bindings
+  (ADR 0009), so consumers never touch CM directly."
+  [e command & args]
+  (if (cm6? e)
+    (cm6-commands/run (->cm-ed e) command)
+    (when-let [f (aget (.-commands js/CodeMirror) (name command))]
+      (not= js/CodeMirror.Pass (apply f (->cm-ed e) args)))))
+
+(defn cmd
+  "Run a named editor command on `e` (cursor motion / edit). Returns `e`."
+  [e command]
+  (exec-command e command)
+  e)
 
 (defn set-val
   "Set content value `v` of editor `e`'s CodeMirror object. Cursor position is lost. Returns `e`."

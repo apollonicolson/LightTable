@@ -295,119 +295,119 @@
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.selectAll (editor/->cm-ed ed))))})
+                        (editor/cmd ed :selectAll)))})
 
 (cmd/command {:command :editor.kill-line
               :desc "Editor: Kill line"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.killLine (editor/->cm-ed ed))))})
+                        (editor/cmd ed :killLine)))})
 
 (cmd/command {:command :editor.delete-line
               :desc "Editor: Delete line"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.deleteLine (editor/->cm-ed ed))))})
+                        (editor/cmd ed :deleteLine)))})
 
 (cmd/command {:command :editor.delete-line-left
               :desc "Editor: Delete line left"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.delLineLeft (editor/->cm-ed ed))))})
+                        (editor/cmd ed :delLineLeft)))})
 
 (cmd/command {:command :editor.doc-start
               :desc "Editor: Move to first line"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goDocStart (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goDocStart)))})
 
 (cmd/command {:command :editor.doc-end
               :desc "Editor: Move to last line"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goDocEnd (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goDocEnd)))})
 
 (cmd/command {:command :editor.line-start
               :desc "Editor: Move to start of the line"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goLineStart (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goLineStart)))})
 
 (cmd/command {:command :editor.line-start-smart
               :desc "Editor: Move to first non-whitespace char in the line"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goLineStartSmart (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goLineStartSmart)))})
 
 (cmd/command {:command :editor.line-end
               :desc "Editor: Move to end of the line"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goLineEnd (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goLineEnd)))})
 
 (cmd/command {:command :editor.line-right
               :desc "Editor: Goto the right of the line"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goLineRight (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goLineRight)))})
 
 (cmd/command {:command :editor.line-left
               :desc "Editor: Goto the left of the line"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goLineLeft (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goLineLeft)))})
 
 (cmd/command {:command :editor.line-up
               :desc "Editor: Previous line"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goLineUp (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goLineUp)))})
 
 (cmd/command {:command :editor.line-down
               :desc "Editor: Next line"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goLineDown (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goLineDown)))})
 
 (cmd/command {:command :editor.page-up
               :desc "Editor: Page up"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goPageUp (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goPageUp)))})
 
 (cmd/command {:command :editor.page-down
               :desc "Editor: Page down"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goPageDown (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goPageDown)))})
 
 (cmd/command {:command :editor.char-left
               :desc "Editor: Move left one character"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goCharLeft (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goCharLeft)))})
 
 (cmd/command {:command :editor.char-right
               :desc "Editor: Move right one character"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goCharRight (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goCharRight)))})
 
 
 (cmd/command {:command :editor.column-left
@@ -415,105 +415,105 @@
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goColumnLeft (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goColumnLeft)))})
 
 (cmd/command {:command :editor.column-right
               :desc "Editor: Move right one column"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goColumnRight (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goColumnRight)))})
 
 (cmd/command {:command :editor.word-left
               :desc "Editor: Move left one word"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goWordLeft (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goWordLeft)))})
 
 (cmd/command {:command :editor.word-right
               :desc "Editor: Move right one word"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goWordRight (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goWordRight)))})
 
 (cmd/command {:command :editor.group-left
               :desc "Editor: Move left one group"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goGroupLeft (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goGroupLeft)))})
 
 (cmd/command {:command :editor.group-right
               :desc "Editor: Move right one group"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.goGroupRight (editor/->cm-ed ed))))})
+                        (editor/cmd ed :goGroupRight)))})
 
 (cmd/command {:command :editor.delete-char-left
               :desc "Editor: Delete character to the left"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.delCharBefore (editor/->cm-ed ed))))})
+                        (editor/cmd ed :delCharBefore)))})
 
 (cmd/command {:command :editor.delete-char-right
               :desc "Editor: Delete character to the right"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.delCharAfter (editor/->cm-ed ed))))})
+                        (editor/cmd ed :delCharAfter)))})
 
 (cmd/command {:command :editor.delete-word-left
               :desc "Editor: Delete word to the left"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.delWordBefore (editor/->cm-ed ed))))})
+                        (editor/cmd ed :delWordBefore)))})
 
 (cmd/command {:command :editor.delete-word-right
               :desc "Editor: Delete word to the right"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.delWordAfter (editor/->cm-ed ed))))})
+                        (editor/cmd ed :delWordAfter)))})
 
 (cmd/command {:command :editor.delete-group-left
               :desc "Editor: Delete group to the left"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.delGroupBefore (editor/->cm-ed ed))))})
+                        (editor/cmd ed :delGroupBefore)))})
 
 (cmd/command {:command :editor.delete-group-right
               :desc "Editor: Delete group to the right"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.delGroupAfter (editor/->cm-ed ed))))})
+                        (editor/cmd ed :delGroupAfter)))})
 
 (cmd/command {:command :editor.transpose-chars
               :desc "Editor: Transpose characters"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.transposeChars (editor/->cm-ed ed))))})
+                        (editor/cmd ed :transposeChars)))})
 
 (cmd/command {:command :editor.new-line-indent
               :desc "Editor: Newline and indent"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.newlineAndIndent (editor/->cm-ed ed))))})
+                        (editor/cmd ed :newlineAndIndent)))})
 
 (cmd/command {:command :editor.toggle-overwrite
               :desc "Editor: Toggle overwrite"
               :hidden true
               :exec (fn []
                       (when-let [ed (last-active)]
-                        (js/CodeMirror.commands.toggleOverwrite (editor/->cm-ed ed))))})
+                        (editor/cmd ed :toggleOverwrite)))})
 
 (cmd/command {:command :editor.cut
               :desc "Editor: Cut"
@@ -582,10 +582,9 @@
               :hidden true
               :exec (fn [cmd & args]
                       (when-let [ed (last-active)]
-                        (when-let [command (aget js/CodeMirror.commands cmd)]
-                          (when (= js/CodeMirror.Pass
-                                   (apply command (editor/->cm-ed ed) args))
-                            (kb/passthrough)))))})
+                        ;; passthrough when the command did NOT handle the key
+                        (when-not (apply editor/exec-command ed cmd args)
+                          (kb/passthrough))))})
 
 (cmd/command {:command :editor.fold-code
               :desc "Editor: Fold code at cursor"
