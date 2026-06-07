@@ -3,7 +3,6 @@
   (:require [lt.object :as object]
             [lt.objs.keyboard :as keyboard]
             [lt.objs.command :as cmd]
-            [lt.util.load :as load]
             [lt.objs.thread :as thread]
             [lt.objs.sidebar.command :as scmd]
             [lt.objs.editor.pool :as pool]
@@ -12,46 +11,21 @@
             [clojure.string :as string]
             [lt.util.js :refer [wait]]
             [lt.util.dom :as dom])
-  (:require-macros [lt.macros :refer [behavior defui background]]))
+  (:require-macros [lt.macros :refer [behavior defui]]))
 
-(defn stream [str]
-  (js/CodeMirror.StringStream. str))
-
-(defn advance [s]
-  (set! (.-start s) (.-pos s)))
-
-(defn next* [s]
-  (.next s))
-
-(defn current [s]
-  (.current s))
-
-(defn peek* [s]
-  (.peek s))
-
-(defn skip-space [s]
-  (when (and (peek* s) (re-seq #"\s" (peek* s)))
-    (.eatSpace s)
-    (advance s)))
-
-(defn eat-while [s r]
-  (.eatWhile s r))
+;; Pure tokenizer (no CM5 StringStream): a token is a maximal run of `pattern`
+;; chars. `pattern` is a single-char regex (e.g. #"[\w_$]"); we match runs of it.
+(defn- run-re [pattern]
+  (js/RegExp. (str "(?:" (.-source pattern) ")+") "g"))
 
 (defn string->tokens [str pattern]
-  (let [s (stream str)
-        res (js-obj)]
-    (skip-space s)
-    (while (peek* s)
-      (eat-while s pattern)
-      (if-not (empty? (current s))
-        (do
-          (aset res (current s) true)
-          (advance s))
-        (do
-          (next* s)
-          (advance s)))
-      (skip-space s))
-    (into-array (map #(do #js {:completion %}) (js/Object.keys res)))))
+  (let [re (run-re pattern)
+        out (js-obj)]
+    (loop []
+      (when-let [m (.exec re str)]
+        (aset out (aget m 0) true)
+        (recur)))
+    (into-array (map (fn [w] #js {:completion w}) (js/Object.keys out)))))
 
 (def default-pattern #"[\w_$]")
 
@@ -62,26 +36,19 @@
 
 (defn get-token [ed pos]
   (let [line (editor/line ed (:line pos))
-        pattern (get-pattern ed)
-        s (stream line)
-        ch (:ch pos)]
-    (skip-space s)
+        re (run-re (get-pattern ed))
+        ch (:ch pos)
+        empty-tok {:line (:line pos) :start ch :end ch}]
     (loop []
-      (eat-while s pattern)
-      (if (and (not (empty? (current s)))
-               (<= (.-start s) ch)
-               (>= (.-pos s) ch))
-        {:start (.-start s)
-         :end (.-pos s)
-         :line (:line pos)
-         :string (current s)}
-        (if-not (peek* s)
-          {:line (:line pos) :start (:ch pos) :end (:ch pos)}
-          (do
-            (next* s)
-            (advance s)
-            (skip-space s)
-            (recur)))))))
+      (if-let [m (.exec re line)]
+        (let [start (.-index m)
+              end (+ start (.-length (aget m 0)))]
+          (cond
+            (and (<= start ch) (>= end ch)) {:start start :end end :line (:line pos)
+                                             :string (subs line start end)}
+            (> start ch) empty-tok
+            :else (recur)))
+        empty-tok))))
 
 (defn non-token-change? [ed ch]
   ;; CM6 has no per-line CM5 change object (ch is nil) — treat as a token change so
@@ -95,50 +62,11 @@
         "paste" true
         false))))
 
-(def w (background (fn [obj-id m]
-                     (.log js/console "M:" (pr-str obj-id) (pr-str m))
-                     (let [StringStream (-> (js/require (str js/ltpath "/core/node_modules/codemirror/addon/runmode/runmode.node.js"))
-                                            (.-StringStream))
-                           stream (fn [s]
-                                    (StringStream. s))
-                           advance (fn [s]
-                                     (set! (.-start s) (.-pos s)))
-                           next* (fn [s]
-                                   (.next s))
-                           peek* (fn [s]
-                                   (.peek s))
-                           current (fn [s]
-                                     (.current s))
-                           skip-space (fn [s]
-                                        (when (and (peek* s) (re-seq #"\s" (peek* s)))
-                                          (.eatSpace s)
-                                          (advance s)))
-                           eat-while (fn [s r]
-                                       (.eatWhile s r))
-                           string->tokens (fn [str pattern]
-                                            (.log js/console "PATTERN" (pr-str pattern))
-                                            (let [s (stream str)
-                                                  pattern (re-pattern pattern)
-                                                  res (js-obj)]
-                                              (.log js/console "REPATTERN" (pr-str pattern))
-                                              (skip-space s)
-                                              (while (peek* s)
-                                                (eat-while s pattern)
-                                                (if-not (empty? (current s))
-                                                  (do
-                                                    (aset res (current s) true)
-                                                    (advance s))
-                                                  (do
-                                                    (next* s)
-                                                    (advance s)))
-                                                (skip-space s))
-                                              (into-array (map #(do #js {:completion %}) (js/Object.keys res)))))]
-                       (js/_send obj-id :hint-tokens (string->tokens (:string m) (:pattern m)))))))
-
+;; The CM5 runmode-StringStream background worker is gone — the pure string->tokens
+;; runs inline (the calling behavior is debounced 400ms, so no thread needed).
 (defn async-hints [this]
   (when @this
-    (w this {:string (editor/->val this)
-             :pattern (.-source (get-pattern this))})))
+    (object/merge! this {::hints (string->tokens (editor/->val this) (get-pattern this))})))
 
 (defn text|completion [x]
   (or (.-text x) (.-completion x)))
@@ -192,8 +120,6 @@
           :triggers #{:escape!}
           :reaction (fn [this force?]
                       (let [elem (object/->content this)]
-                        (when (:line @this)
-                          (js/CodeMirror.off (:line @this) "change" on-line-change))
                         (ctx/out! [:editor.keys.hinting.active])
                         (object/merge! this {:active false
                                              :selected 0
@@ -272,16 +198,14 @@
   ([this opts]
    (let [pos (editor/->cursor this)
          token (get-token this pos)
-         ;; CM6 has no line handles — typing is tracked via the editor :change event
-         ;; (::cm6-hint-refresh), so there is no per-line listener to register.
-         line nil
+         ;; CM6 tracks typing via the editor :change event (::cm6-hint-refresh) —
+         ;; no per-line listener to register.
          elem (object/->content hinter)]
      (ctx/in! [:editor.keys.hinting.active] this)
      (object/merge! hinter {:token token
                             :starting-token token
                             :ed this
-                            :active true
-                            :line line})
+                            :active true})
      (object/raise hinter :change! (:string token))
      (object/raise hinter :active)
      (let [count (count (:cur @hinter))]
@@ -290,7 +214,6 @@
         (and (= 1 count)
              (:select-single opts)) (object/raise hinter :select! 0)
         :else (do
-                (when line (js/CodeMirror.on line "change" on-line-change))
                 (dom/append (dom/$ :body) elem)
                 (editor/position-hint this elem {:line (:line token) :ch (:start token)})))))))
 
@@ -368,11 +291,18 @@
 ;; Mode extensions
 ;;*********************************************************
 
-(behavior ::init
-          :triggers #{:init}
+;; CM5 set per-mode hint-patterns via extendMode; CM6 has no mode registry, so we
+;; set :hint-pattern per editor from its mime (get-pattern reads it). The clojure
+;; pattern keeps -, >, :, *, $, ?, <, !, +, ., / so tokens like map-indexed / swap!
+;; / ->> complete as one word.
+(def ^:private clj-hint-pattern #"[\w\-\>\:\*\$\?\<\!\+\.\/]")
+(def ^:private mode-hint-patterns
+  {"clojure" clj-hint-pattern "clj" clj-hint-pattern "cljs" clj-hint-pattern
+   "cljc" clj-hint-pattern "edn" clj-hint-pattern
+   "css" #"[\w\.\-\#]"})
+
+(behavior ::set-hint-pattern
+          :triggers #{:object.instant}
           :reaction (fn [this]
-                      (load/js "core/node_modules/codemirror/addon/hint/show-hint.js" :sync)
-                      (js/CodeMirror.extendMode "clojure" (clj->js {:hint-pattern #"[\w\-\>\:\*\$\?\<\!\+\.\/foo]"}))
-                      (js/CodeMirror.extendMode "text/x-clojurescript" (clj->js {:hint-pattern #"[\w\-\>\:\*\$\?\<\!\+\.\/foo]"}))
-                      (js/CodeMirror.extendMode "css" (clj->js {:hint-pattern #"[\w\.\-\#]"}))
-                      ))
+                      (when-let [p (some-> (-> @this :info :mime) name string/lower-case mode-hint-patterns)]
+                        (object/merge! this {:hint-pattern p}))))
