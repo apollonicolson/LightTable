@@ -40,9 +40,12 @@
   for the tab). `opts` may carry `:doc` (string, default \"\") or `:state` (a
   prebuilt EditorState; takes precedence). The state carries the standard
   extensions from `cm6/make-state` unless one is supplied."
-  [parent {:keys [doc state]}]
+  [parent {:keys [doc state dispatch]}]
   (let [config #js {:state (or state (cm6/make-state (or doc "")))}]
     (when parent (set! (.-parent config) parent))
+    ;; A `dispatch` override lets a mediator (the linked-doc engine) intercept every
+    ;; transaction. It MUST apply via (.update view #js [tr]); see lt.editor.cm6.document.
+    (when dispatch (set! (.-dispatch config) dispatch))
     (EditorView. config)))
 
 (defn view-state

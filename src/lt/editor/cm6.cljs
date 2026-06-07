@@ -40,6 +40,14 @@
    (.create EditorState #js {:doc s
                              :extensions (.concat #js [(cm-history) generation-field] extra)})))
 
+(defn make-state-no-history
+  "Like [[make-state]] but WITHOUT the history extension — for SIBLING (projection)
+  views in a linked-doc set. The history owner is the primary view; siblings route
+  undo/redo to it (CM6's split-view idiom — see lt.editor.cm6.document)."
+  [s extra]
+  (.create EditorState #js {:doc s
+                            :extensions (.concat #js [generation-field] (or extra #js []))}))
+
 (defn doc-string
   "The document text of `state`."
   [state]
