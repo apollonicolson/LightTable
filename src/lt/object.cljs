@@ -3,6 +3,7 @@
   behaviors and tags"
   (:refer-clojure :exclude [set!])
   (:require [lt.object.resolve :as resolve]
+            [lt.object.dispatch :as dispatch]
             [singultus.core :as crate]
             [clojure.set :as set]
             [clojure.string :as string]
@@ -97,7 +98,8 @@
   ([obj reactions args] (raise* obj reactions args nil))
   ([obj reactions args trigger]
    (doseq [r reactions
-           :let [func (:reaction (->behavior r))
+           :let [beh (->behavior r)
+                 func (:reaction beh)
                  args (if (coll? r)
                         (concat (rest r) args)
                         args)
@@ -107,12 +109,19 @@
            :when func]
      (try
      (with-time
+       ;; Invocation goes through the open dispatch multimethod ('how'); the
+       ;; resolved behavior set is the 'which' (lt.object.resolve). Default
+       ;; dispatch is the historical synchronous apply.
        (binding [*behavior-meta* meta]
-         (apply func obj args))
+         (dispatch/invoke beh obj args))
+       ;; tap> is the decomplected observation channel; the :object.behavior.time
+       ;; self-raise is retained for back-compat (public API; ::report-time).
+       (dispatch/observe-dispatched! {:behavior (:name beh) :trigger trigger :time time})
        (when-not (= trigger :object.behavior.time)
          (raise obj :object.behavior.time r time trigger)))
        (catch :default e
-         (safe-report-error (str "Invalid behavior: " (-> (->behavior r) :name)))
+         (dispatch/observe-error! {:behavior (:name beh) :trigger trigger :error e})
+         (safe-report-error (str "Invalid behavior: " (:name beh)))
          (safe-report-error e))))))
 
 (defn raise
