@@ -37,7 +37,14 @@ test.beforeAll(async () => {
     .toBe(true);
 });
 
-test.afterAll(async () => { if (app) await app.close(); });
+// Driving the file-backed editor dirties it; a graceful app.close() would hit the
+// unsaved-changes prompt (::stop-close-dirty) and hang. Race close, then force-kill.
+test.afterAll(async () => {
+  if (!app) return;
+  const proc = app.process();
+  await Promise.race([app.close().catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
+  try { proc.kill('SIGKILL'); } catch (_) { /* already gone */ }
+});
 
 // Each test seeds a known document via the seam, so assertions are deterministic
 // and independent of the fixture content.

@@ -35,7 +35,12 @@ test.beforeAll(async () => {
   await win.waitForSelector('.cm-editor');
 });
 
-test.afterAll(async () => { if (app) await app.close(); });
+test.afterAll(async () => {
+  if (!app) return;
+  const proc = app.process();
+  await Promise.race([app.close().catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
+  try { proc.kill('SIGKILL'); } catch (_) { /* already gone */ }
+});
 
 test.beforeEach(async () => { await lt('setVal', 'ab\ncde\nf'); });
 
@@ -101,6 +106,16 @@ test('CM6 live — modes (set-mode applies Lezer syntax highlighting)', async ()
   await win.waitForFunction(() => document.querySelectorAll('.cm-content .cm-line span').length > 0);
   expect(await spans()).toBeGreaterThan(0);   // Lezer JS highlighting wraps tokens
   expect(await lt('val')).toBe('function foo() { return 42; }'); // doc undisturbed
+});
+
+test('CM6 live — modes: clojure via legacy-modes bridge (the default content)', async () => {
+  await lt('setVal', '(defn foo [x] (+ x 1))');
+  const spans = () => win.evaluate(() => document.querySelectorAll('.cm-content .cm-line span').length);
+  expect(await spans()).toBe(0);
+  await lt('setMode', 'clojure');
+  await win.waitForFunction(() => document.querySelectorAll('.cm-content .cm-line span').length > 0);
+  expect(await spans()).toBeGreaterThan(0);   // StreamLanguage(clojure) highlights
+  expect(await lt('val')).toBe('(defn foo [x] (+ x 1))');
 });
 
 test('CM6 live — events (edits raise :change to LightTable behaviors)', async () => {
