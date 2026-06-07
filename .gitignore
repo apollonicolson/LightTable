@@ -20,3 +20,6 @@
 /deploy/core/lighttable/js/
 /deploy/core/logs/
 /deploy/core/ltcache/
+# playwright e2e artifacts
+/test-results/
+/playwright-report/

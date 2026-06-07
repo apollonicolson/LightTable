@@ -3,9 +3,11 @@
   "private": true,
   "description": "Build tooling (shadow-cljs) for the LightTable CLJS renderer.",
   "scripts": {
-    "test": "shadow-cljs compile test && node run-node-tests.cjs"
+    "test": "shadow-cljs compile test && node run-node-tests.cjs",
+    "test:e2e": "shadow-cljs release app && playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "jsdom": "^29.1.1",
     "shadow-cljs": "3.4.11"
   },
