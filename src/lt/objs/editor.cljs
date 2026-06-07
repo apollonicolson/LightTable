@@ -148,29 +148,8 @@
   [e]
   (be/-value (backend e)))
 
-(defn ->token
-  "Returns token located as `pos` within editor `e`.
-
-  See [getTokenAt](http://codemirror.net/doc/manual.html#getTokenAt)."
-  [e pos]
-  (js->clj (.getTokenAt (->cm-ed e) (clj->js pos)) :keywordize-keys true))
-
-(defn- ->token-js [e pos]
-  (.getTokenAt (->cm-ed e) (clj->js pos)))
-
-(defn ->token-type
-  "Return the type of token located at position `pos` for editor `e`.
-
-  See [getTokenTypeAt](http://codemirror.net/doc/manual.html#getTokenTypeAt)."
-  [e pos]
-  (.getTokenTypeAt (->cm-ed e) (clj->js pos)))
-
-(defn- ->coords
-  "Returns cursor's coordinates of the form `{:left :top: bottom}` for editor `e`.
-
-  See [cursorCoords](http://codemirror.net/doc/manual.html#cursorCoords)."
-  [e]
-  (js->clj (.cursorCoords (->cm-ed e)) :keywordize-keys true :force-obj true))
+;; ->token/->token-type (getTokenAt) + ->coords (cursorCoords) removed with CM5
+;; (no callers). CM6 token info would come from syntaxTree / coordsAtPos if needed.
 
 (defn- +class
   "Add class `klass` to editor `e`. Returns `e`."
@@ -184,55 +163,24 @@
   (remove-class (->elem e) (name klass))
   e)
 
-(defn cursor
-  "Return cursor position of editor `e`'s as js object. Returns JSON not edn...
-  use [[->cursor]] for edn.
-
-  Example:
-  ```
-  (cursor e)
-  ;;=> {\"line\": 144, \"ch\": 9}
-  ```"
-  ([e] (cursor e nil))
-  ([e side] (.getCursor (->cm-ed e) side)))
-
 (defn ->cursor
-  "Same as [[cursor]] but returned as edn."
+  "Cursor position of editor `e` as edn {:line :ch}."
   [e & [side]]
   (be/-cursor (backend e) side))
 
 (defn pos->index
-  "Returns integer based on position `pos` from editor's CodeMirror Object.
-  Position consists of line and character indexes as JSON, such as:
-
-  ```
-  {\"line\": 144, \"ch\": 9}
-  ```
-
-  Reverse of [posFromIndex](http://codemirror.net/doc/manual.html#posFromIndex)."
+  "Character offset of position `pos` ({:line :ch}) in editor `e`'s doc (CM6)."
   [e pos]
-  (.indexFromPos (->cm-ed e) (clj->js pos)))
+  (cm6/pos->offset (cm6-view/view-state (->cm-ed e)) pos))
+
+;; cursor (getCursor) / find-marks (findMarksAt) / bookmark (setBookmark) removed
+;; with CM5 (no callers). `mark` (below) stays — the watches source transform marks
+;; a headless doc.
 
 (defn mark
-  "Marks text in editor `e` within range of `from` and `to`.
-
-  See [markText](http://codemirror.net/doc/manual.html#markText)."
+  "Marks text within [from,to) of `e`'s doc (used on the headless transform doc)."
   [e from to opts]
   (.markText (->cm-ed e) (clj->js from) (clj->js to) (clj->js opts)))
-
-(defn find-marks
-  "Returns marks found at `pos` in .
-
-  See [findMarksAt](http://codemirror.net/doc/manual.html#findMarksAt)."
-  [e pos]
-  (.findMarksAt (->cm-ed e) (clj->js pos)))
-
-(defn bookmark
-  "Insert bookmark at position `from` for widget `widg`.
-
-  See [setBookmark](http://codemirror.net/doc/manual.html#setBookmark)."
-  [e from widg]
-  (.setBookmark (->cm-ed e) (clj->js from) (clj->js widg)))
 
 (defn option
   "Value for option `o`. CM6 has no flat getOption; the few options consumers read

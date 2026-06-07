@@ -30,7 +30,7 @@
        (apply keyword parts)))))
 
 (defn ->index [this]
-  (editor/pos->index this (editor/cursor this)))
+  (editor/pos->index this (editor/->cursor this)))
 
 (defn idx->item [idx items]
   (first (filter #(> (inc (:end (second %))) idx (dec (:start (second %)))) (map-indexed vector items))))
