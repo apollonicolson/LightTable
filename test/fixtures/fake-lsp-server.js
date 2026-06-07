@@ -30,6 +30,13 @@ function handle(msg) {
            result: { isIncomplete: false, items: [
              { label: 'defn', kind: 3, insertText: 'defn', sortText: '1' },
              { label: 'def', kind: 3, insertText: 'def', sortText: '0' } ] } });
+  } else if (msg.method === 'textDocument/hover') {
+    send({ jsonrpc: '2.0', id: msg.id,
+           result: { contents: { kind: 'markdown', value: 'fake hover: a var' } } });
+  } else if (msg.method === 'textDocument/definition') {
+    send({ jsonrpc: '2.0', id: msg.id,
+           result: { uri: 'file:///tmp/target.clj',
+                     range: { start: { line: 4, character: 2 }, end: { line: 4, character: 8 } } } });
   } else if (msg.method === 'shutdown') {
     send({ jsonrpc: '2.0', id: msg.id, result: null });
   } else if (msg.method === 'exit') {

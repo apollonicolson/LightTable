@@ -65,6 +65,23 @@
             (fn [result error] (cb (when-not error result))))
   service)
 
+(defn hover
+  "Request hover info at LSP position {:line :character}. Calls `(cb result)`
+  with the raw LSP hover result, or `(cb nil)` on error/none."
+  [service uri line character cb]
+  (lsp/then (lsp/hover-at (:client service) uri line character)
+            (fn [result error] (cb (when-not error result))))
+  service)
+
+(defn definition
+  "Request the definition location at LSP position {:line :character}. Calls
+  `(cb result)` with the raw LSP result (Location/Location[]/LocationLink[]),
+  or `(cb nil)` on error/none."
+  [service uri line character cb]
+  (lsp/then (lsp/definition-at (:client service) uri line character)
+            (fn [result error] (cb (when-not error result))))
+  service)
+
 (defn doc-version [service uri]
   (get-in @(:docs service) [uri :version]))
 

@@ -11,8 +11,11 @@
   (:require [lt.lsp.service :as svc]
             [lt.lsp.node-transport :as nt]
             [lt.lsp.completion :as completion]
+            [lt.lsp.hover :as hover]
+            [lt.lsp.definition :as definition]
             [defport.lsp.client :as lsp]
             [lt.object :as object]
+            [lt.objs.cli :as cli]
             [lt.objs.editor :as editor]))
 
 (defonce ^:private state
@@ -70,6 +73,44 @@
                        (let [hints (completion/lsp-items->hints result)]
                          (object/merge! editor {:lsp/completions hints})
                          (when cb (cb hints)))))))
+  nil)
+
+(defn hover!
+  "Request hover at LSP position (line, character) for `uri`; on response render
+  the text as a tooltip on `editor` and call `(cb text-or-nil)`."
+  [editor uri line character cb]
+  (ensure-connected!
+   (fn [s]
+     (svc/hover s uri line character
+                (fn [result]
+                  (let [text (hover/hover->text result)]
+                    (if text
+                      (editor/show-hover editor line character text)
+                      (editor/clear-hover editor))
+                    (when cb (cb text)))))))
+  nil)
+
+(defn definition!
+  "Request the definition at LSP position (line, character) for `uri`; call
+  `(cb location-or-nil)` with the resolved {:uri :line :character}. Pure resolve —
+  no navigation (see jump-to-definition!). The uri identifies the doc, so no
+  editor reference is needed."
+  [uri line character cb]
+  (ensure-connected!
+   (fn [s]
+     (svc/definition s uri line character
+                     (fn [result] (when cb (cb (definition/definition->location result)))))))
+  nil)
+
+(defn jump-to-definition!
+  "definition! + open the target file at its line (LSP 0-based line → LightTable
+  1-based via cli/open-paths). Calls `(cb location)` after dispatching the jump."
+  [uri line character cb]
+  (definition! uri line character
+               (fn [loc]
+                 (when-let [path (and loc (definition/uri->path (:uri loc)))]
+                   (cli/open-paths [[path (inc (:line loc))]] false))
+                 (when cb (cb loc))))
   nil)
 
 (defn change! [uri text]

@@ -387,3 +387,33 @@ test('CM6 live — LSP completion via the connector + hint source', async () => 
   expect(hints).toContain('defn');
   await lt('lspReset');
 });
+
+// ADR 0010 slice 4 (live) — LSP hover renders a CM6 tooltip. The connector
+// requests hover from the (fake) server, maps the contents to text, and shows it
+// via the cm6.tooltip field (showTooltip facet) in the live editor DOM.
+test('CM6 live — LSP hover renders a tooltip via the connector', async () => {
+  const fakeServer = path.join(ROOT, 'test/fixtures/fake-lsp-server.js');
+  await lt('lspReset');
+  await lt('openCm6', '(ns a)\n(def x 1)\n');
+  await lt('lspOpenActive', ['node', fakeServer], 'file:///tmp/hov-a.clj');
+  const text = await lt('lspHover', 'file:///tmp/hov-a.clj', 1, 5);
+  expect(text).toBe('fake hover: a var');                 // round-trip + mapping
+  await expect.poll(() => win.locator('.cm6-lsp-tooltip').count(), { timeout: 5000 })
+    .toBeGreaterThan(0);                                  // tooltip in the live DOM
+  expect(await win.locator('.cm6-lsp-tooltip').first().textContent())
+    .toBe('fake hover: a var');
+  await lt('lspReset');
+});
+
+// ADR 0010 slice 4 (live) — LSP go-to-definition resolves a target via the
+// connector (request → definition->location). Navigation itself reuses
+// LightTable's open-paths; here we assert the resolved location from the server.
+test('CM6 live — LSP go-to-definition resolves a location', async () => {
+  const fakeServer = path.join(ROOT, 'test/fixtures/fake-lsp-server.js');
+  await lt('lspReset');
+  await lt('openCm6', '(ns a)\n(def x 1)\n');
+  await lt('lspOpenActive', ['node', fakeServer], 'file:///tmp/def-a.clj');
+  const loc = await lt('lspDefinition', 'file:///tmp/def-a.clj', 1, 5);
+  expect(loc).toEqual({ uri: 'file:///tmp/target.clj', line: 4, character: 2 });
+  await lt('lspReset');
+});

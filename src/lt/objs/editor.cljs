@@ -30,6 +30,7 @@
             [lt.editor.cm6.results :as cm6-results]
             [lt.editor.cm6.watches :as cm6-watches]
             [lt.editor.cm6.diagnostics :as cm6-diagnostics]
+            [lt.editor.cm6.tooltip :as cm6-tooltip]
             [lt.editor.cm6.fold :as cm6-fold]
             [lt.object :as object]
             [lt.objs.files :as files]
@@ -447,6 +448,17 @@
   [e]
   (cm6-diagnostics/count-diagnostics (cm6-view/view-state (->cm-ed e))))
 
+;; LSP hover seam (ADR 0010): render `text` as a CM6 tooltip at LSP position
+;; {:line :character} (0-based), or clear it.
+(defn show-hover
+  [e line ch text]
+  (let [v (->cm-ed e)
+        st (cm6-view/view-state v)]
+    (cm6-tooltip/show! v (cm6/pos->offset st {:line line :ch ch}) text)))
+
+(defn clear-hover [e]
+  (cm6-tooltip/clear! (->cm-ed e)))
+
 (defn line
   "Returns the content of line `l` from editor `e`.
 
@@ -687,6 +699,7 @@
                                            (:field cm6-results/layer)
                                            (:field cm6-watches/layer)
                                            (:field cm6-diagnostics/layer)
+                                           cm6-tooltip/field
                                            (cm6-fold/extension)
                                            (cm6-modes/initial lang-compartment (:mime info))])
                        ;; Seed from :content (transient editors) or, for a file editor,

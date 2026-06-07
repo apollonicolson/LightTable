@@ -143,6 +143,20 @@
        :editorHints   (fn [] (when-let [e (ed)]
                                (clj->js (map #(.-completion %)
                                              (object/raise-reduce e :hints+ [])))))
+       ;; request LSP hover at (line,character) for the active editor; resolves
+       ;; (a promise) with the hover text and renders the tooltip.
+       :lspHover      (fn [uri line character]
+                        (js/Promise.
+                         (fn [resolve _reject]
+                           (if-let [e (ed)]
+                             (lsp-conn/hover! e uri line character (fn [text] (resolve text)))
+                             (resolve nil)))))
+       ;; request go-to-definition; resolves (a promise) with the location
+       ;; {uri,line,character} the server returned (mapped). No navigation.
+       :lspDefinition (fn [uri line character]
+                        (js/Promise.
+                         (fn [resolve _reject]
+                           (lsp-conn/definition! uri line character (fn [loc] (resolve (clj->js loc)))))))
        ;; drive the full eval manager path (::inline-results etc.) on the active editor
        :evalResult    (fn [text line] (when-let [e (ed)] (object/raise e :editor.result text {:line line} {:type :inline})) nil)
        :evalException (fn [ex line] (when-let [e (ed)] (object/raise e :editor.exception ex {:line line})) nil)

@@ -9,7 +9,9 @@
             [defport.lsp.client :as lsp]
             [lt.lsp.node-transport :as nt]
             [lt.lsp.service :as svc]
-            [lt.lsp.completion :as comp]))
+            [lt.lsp.completion :as comp]
+            [lt.lsp.hover :as hover]
+            [lt.lsp.definition :as defn-loc]))
 
 (deftest connect-handshake-sync-and-diagnostics
   (async done
@@ -56,3 +58,34 @@
                   "completion round-trips through the stack + maps + sorts by sortText")
               (lsp/disconnect! (svc/client s))
               (done)))))))))
+
+(deftest hover-request-against-fake-server
+  (async done
+    (let [t (nt/transport ["node" "test/fixtures/fake-lsp-server.js"])
+          s (svc/create t)]
+      (lsp/connect-async!
+       (svc/client s) {:root-uri "file:///tmp"}
+       (fn [_client err]
+         (is (nil? err) "connected")
+         (svc/hover s "file:///tmp/a.clj" 0 0
+                    (fn [result]
+                      (is (= "fake hover: a var" (hover/hover->text result))
+                          "hover round-trips through the stack + maps to text")
+                      (lsp/disconnect! (svc/client s))
+                      (done))))))))
+
+(deftest definition-request-against-fake-server
+  (async done
+    (let [t (nt/transport ["node" "test/fixtures/fake-lsp-server.js"])
+          s (svc/create t)]
+      (lsp/connect-async!
+       (svc/client s) {:root-uri "file:///tmp"}
+       (fn [_client err]
+         (is (nil? err) "connected")
+         (svc/definition s "file:///tmp/a.clj" 0 0
+                         (fn [result]
+                           (is (= {:uri "file:///tmp/target.clj" :line 4 :character 2}
+                                  (defn-loc/definition->location result))
+                               "definition round-trips through the stack + resolves the location")
+                           (lsp/disconnect! (svc/client s))
+                           (done))))))))
