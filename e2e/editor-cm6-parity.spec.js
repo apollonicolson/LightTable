@@ -276,3 +276,13 @@ test('CM6 live — watches (highlight + inline result, unwatch by range)', async
   await lt('unwatchAtCursor');
   expect(await lt('watchCount')).toBe(0);
 });
+
+// ADR 0009 — doc-model: a CM6 editor backed by a doc seeds its content from the
+// doc (the path the flip uses for file editors; save flows through the backend).
+test('CM6 live — doc-model (CM6 editor seeds content from its doc + edits)', async () => {
+  expect(await lt('openCm6Doc', 'seeded\nfrom\ndoc')).toBe(true);
+  expect(await lt('backendKind')).toBe('cm6');
+  expect(await lt('val')).toBe('seeded\nfrom\ndoc');   // content came from the doc
+  await lt('replace', { line: 0, ch: 0 }, { line: 0, ch: 6 }, 'EDITED');
+  expect(await lt('val')).toBe('EDITED\nfrom\ndoc');   // edits land in the CM6 view
+});

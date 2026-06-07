@@ -18,8 +18,8 @@
             [lt.util.dom :as dom]
             [lt.util.cljs :refer [->dottedkw]])
   (:use [singultus.binding :only [bound map-bound]])
-  (:use-macros [singultus.def-macros :only [defpartial]]
-               [lt.macros :only [behavior defui]]))
+  (:require-macros [singultus.def-macros :refer [defpartial]]
+                   [lt.macros :refer [behavior defui]]))
 
 ;;**********************************************************
 ;; transient docs
@@ -69,10 +69,14 @@
                         (let [type (files/path->type path)
                               prev-tags (-> @this :info :tags)
                               mode (files/path->mode path)
-                              neue-doc (doc/create {:doc (editor/get-doc this)
-                                                    :line-ending files/line-ending
-                                                    :mtime (files/stats path)
-                                                    :mime mode})]
+                              ;; CM6 has no detachable Doc — seed the new doc from
+                              ;; the editor's value; CM5 hands over its live Doc.
+                              neue-doc (doc/create (merge {:line-ending files/line-ending
+                                                           :mtime (files/stats path)
+                                                           :mime mode}
+                                                          (if (editor/cm6? this)
+                                                            {:content (editor/->val this)}
+                                                            {:doc (editor/get-doc this)})))]
                           (when (:doc @this)
                             (object/raise (:doc @this) :close.force))
                           (doc/register-doc neue-doc path)

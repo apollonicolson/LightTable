@@ -894,11 +894,12 @@
   (be/-dirty? (backend e) gen))
 
 (defn get-doc
-  "Returns currently active document for the editor.
-
-  See [getDoc](http://codemirror.net/doc/manual.html#getDoc)."
+  "Returns currently active CM document for the editor (CM5 only). CM6 has no
+  detachable Doc — returns nil there; callers (save-as) seed a new doc from the
+  editor's value instead."
   [e]
-  (.getDoc (->cm-ed e)))
+  (when-not (cm6? e)
+    (.getDoc (->cm-ed e))))
 
 (defn set-doc!
   "Adds document `doc` to editor `e`. If there is already a document associated with the editor then it is replaced. Returns old document.
@@ -980,7 +981,14 @@
                                              (:field cm6-results/layer)
                                              (:field cm6-watches/layer)
                                              (cm6-modes/initial lang-compartment (:mime info))])
-                         state (cm6/make-state (or (:content info) "") extra)
+                         ;; Seed from :content (transient editors) or, for a file
+                         ;; editor, from the doc's text (opener passes :doc, not
+                         ;; :content). The CM5 Doc object remains the manager's record
+                         ;; (mtime); editing + save flow through the CM6 view/backend.
+                         seed (or (:content info)
+                                  (when-let [d (:doc info)] (.getValue (:doc (deref d))))
+                                  "")
+                         state (cm6/make-state seed extra)
                          view (cm6-view/create-view nil {:state state})]
                      (object/merge! obj {:ed view
                                          :backend (be/cm6-backend view)

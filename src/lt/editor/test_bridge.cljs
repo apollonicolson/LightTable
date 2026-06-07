@@ -13,6 +13,7 @@
   (:require [lt.object :as object]
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool]
+            [lt.objs.document :as document]
             [lt.editor.cm6.find :as cm6-find]
             [lt.editor.cm6.results :as cm6-results]
             [lt.editor.cm6.view :as cm6-view]
@@ -41,6 +42,15 @@
                      (tabs/add! e)
                      (tabs/active! e)
                      (boolean e)))
+       ;; Open a CM6 editor backed by a DOC (not inline :content) — exercises the
+       ;; doc-model seed path that the flip relies on for file editors.
+       :openCm6Doc (fn [content]
+                     (let [d (document/create {:content (or content "") :mime "clojure"})
+                           e (pool/create {:backend :cm6 :doc d})]
+                       (object/add-behavior! e ::count-changes)
+                       (tabs/add! e)
+                       (tabs/active! e)
+                       (boolean e)))
        :backendKind (fn [] (when-let [e (ed)] (name (or (:backend-kind @e) :cm5))))
        :changeCount (fn [] (when-let [e (ed)] (::change-count @e 0)))
        :val      (fn [] (when-let [e (ed)] (editor/->val e)))
