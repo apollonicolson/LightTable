@@ -18,9 +18,12 @@
   pixel-measurement (coords, scrolling) still needs a real browser."
   (:require ["@codemirror/state" :as cm-state]
             ["@codemirror/view" :as cm-view]
+            ["@codemirror/commands" :as cm-commands]
             [lt.editor.cm6 :as cm6]))
 
 (def ^:private EditorView (.-EditorView cm-view))
+(def ^:private cm-undo (.-undo cm-commands))
+(def ^:private cm-redo (.-redo cm-commands))
 
 (defn create-view
   "Mount an EditorView into DOM element `parent`. `opts` may carry `:doc` (string,
@@ -60,3 +63,38 @@
   [view]
   (.destroy view)
   view)
+
+;; ── live-view writes (offset-based; dispatch transactions → history-preserving) ─
+;; The pure ops in `lt.editor.cm6` are state→state values; these are their live
+;; analogues for an EditorView — they dispatch, so they thread through history
+;; (unlike set-state!, which would reset it). The CM6 backend (lt.editor.backend)
+;; uses these; reads still go through `view-state` + the cm6 accessors.
+(defn replace! [view from to text]
+  (dispatch! view #js {:changes #js {:from from :to to :insert text}}))
+
+(defn move-cursor! [view offset]
+  (dispatch! view #js {:selection #js {:anchor offset}}))
+
+(defn set-selection! [view anchor head]
+  (dispatch! view #js {:selection #js {:anchor anchor :head head}}))
+
+(defn select-all! [view]
+  (dispatch! view #js {:selection #js {:anchor 0 :head (cm6/doc-length (view-state view))}}))
+
+(defn set-val! [view s]
+  (dispatch! view #js {:changes #js {:from 0 :to (cm6/doc-length (view-state view)) :insert s}
+                       :selection #js {:anchor 0}}))
+
+(defn insert-at-cursor! [view text]
+  (let [off (cm6/cursor-offset (view-state view))]
+    (dispatch! view #js {:changes #js {:from off :insert text}
+                         :selection #js {:anchor (+ off (count text))}})))
+
+(defn replace-selection! [view text]
+  (let [m (.. (view-state view) -selection -main)
+        from (.-from m)]
+    (dispatch! view #js {:changes #js {:from from :to (.-to m) :insert text}
+                         :selection #js {:anchor (+ from (count text))}})))
+
+(defn undo! "Undo on the live view (no-op if no history)." [view] (cm-undo view) view)
+(defn redo! "Redo on the live view (no-op if nothing to redo)." [view] (cm-redo view) view)

@@ -19,6 +19,7 @@
   (:refer-clojure :exclude [val replace range])
   (:require [singultus.core :as crate]
             [lt.objs.context :as ctx-obj]
+            [lt.editor.backend :as be]
             [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
@@ -43,18 +44,28 @@
   [e]
   (.-parentElement (.getScrollerElement (->cm-ed e))))
 
+(defn backend
+  "The IEditorBackend for editor `e` (M5, ADR 0008). A CM6 editor carries an
+  explicit `:backend`; everything else is wrapped lazily as a CM5 backend, so
+  existing CM5 editors need no creation-path change and behavior is preserved."
+  [e]
+  (if (and (satisfies? IDeref e) (:backend @e))
+    (:backend @e)
+    (be/cm5-backend (->cm-ed e))))
+
 (defn set-val
   "Set content value `v` of editor `e`'s CodeMirror object. Cursor position is lost. Returns `e`."
   [e v]
-  (. (->cm-ed e) (setValue (or v "")))
+  (be/-set-val (backend e) v)
   e)
 
 (defn set-val-and-keep-cursor
   "Same as [[set-val]] but current cursor position is kept."
   [e v]
-  (let [cursor (.getCursor (->cm-ed e))]
-    (set-val e v)
-    (.setCursor (->cm-ed e) cursor)))
+  (let [b (backend e)
+        cursor (be/-cursor b nil)]
+    (be/-set-val b v)
+    (be/-move-cursor b cursor)))
 
 (defn set-options
   "Given a map of options, set each pair as an option on editor `e`'s
@@ -153,7 +164,7 @@
 (defn ->val
   "Return editor `e`'s buffer content."
   [e]
-  (. (->cm-ed e) (getValue)))
+  (be/-value (backend e)))
 
 (defn ->token
   "Returns token located as `pos` within editor `e`.
@@ -206,9 +217,7 @@
 (defn ->cursor
   "Same as [[cursor]] but returned as edn."
   [e & [side]]
-  (let [pos (cursor e side)]
-    {:line (.-line pos)
-     :ch (.-ch pos)}))
+  (be/-cursor (backend e) side))
 
 (defn pos->index
   "Returns integer based on position `pos` from editor's CodeMirror Object.
@@ -344,9 +353,9 @@
 
   See [replaceRange](http://codemirror.net/doc/manual.html#replaceRange)."
   ([e from v]
-   (.replaceRange (->cm-ed e) v (clj->js from)))
+   (be/-replace (backend e) from from v))
   ([e from to v]
-   (.replaceRange (->cm-ed e) v (clj->js from) (clj->js to))))
+   (be/-replace (backend e) from to v)))
 
 (defn range
   "Returns text between positions `from` and `to`.
@@ -360,12 +369,12 @@
 
   See [lineCount](http://codemirror.net/doc/manual.html#lineCount)."
   [e]
-  (.lineCount (->cm-ed e)))
+  (be/-line-count (backend e)))
 
 (defn insert-at-cursor
   "Insert into editor `ed` text `s` at cursor's position. Returns `ed`."
   [ed s]
-  (replace (->cm-ed ed) (->cursor ed) s)
+  (be/-insert-at-cursor (backend ed) s)
   ed)
 
 (defn move-cursor
@@ -373,7 +382,7 @@
 
   See [setCursor](http://codemirror.net/doc/manual.html#setCursor)."
   [ed pos]
-  (.setCursor (->cm-ed ed) (clj->js (or pos {:line 0 :ch 0}))))
+  (be/-move-cursor (backend ed) pos))
 
 (defn scroll-to
   "Scroll editor to pixel position `x`,`y`.
@@ -395,28 +404,26 @@
 
   See [somethingSelected](http://codemirror.net/doc/manual.html#somethingSelected)."
   [e]
-  (.somethingSelected (->cm-ed e)))
+  (be/-selection? (backend e)))
 
 (defn selection-bounds
   "When text is selected, returns position `{:from x :to y}` where `x` and `y` are the cursor's start and end values."
   [e]
-  (when (selection? e)
-    {:from (->cursor e "start")
-     :to (->cursor e "end")}))
+  (be/-selection-bounds (backend e)))
 
 (defn selection
   "Returns currently selected text in editor.
 
   See [getSelection](http://codemirror.net/doc/manual.html#getSelection)."
   [e]
-  (.getSelection (->cm-ed e)))
+  (be/-selection (backend e)))
 
 (defn set-selection
   "Sets editor's selection to `start` and `end` positions.
 
   See [setSelection](http://codemirror.net/doc/manual.html#setSelection)."
   [e start end]
-  (.setSelection (->cm-ed e) (clj->js start) (clj->js end)))
+  (be/-set-selection (backend e) start end))
 
 (defn set-extending
   "Sets editor's 'extending' flag to `ext?`.
@@ -430,21 +437,21 @@
 
   See [replaceSelection](http://codemirror.net/doc/manual.html#replaceSelection)."
   [e neue & [after]]
-  (.replaceSelection (->cm-ed e) neue (name (or after :end)) "+input"))
+  (be/-replace-selection (backend e) neue after))
 
 (defn undo
   "Undo one edit for editor `e`, if any exist.
 
   See [undo](http://codemirror.net/doc/manual.html#undo)."
   [e]
-  (.undo (->cm-ed e)))
+  (be/-undo (backend e)))
 
 (defn redo
   "Redo one edit for editor `e`, if any exist.
 
   See [redo](http://codemirror.net/doc/manual.html#redo)."
   [e]
-  (.redo (->cm-ed e)))
+  (be/-redo (backend e)))
 
 (defn copy
   "Copies currently selected text from editor."
@@ -510,21 +517,21 @@
 
   See [getLine](http://codemirror.net/doc/manual.html#getLine)."
   [e l]
-  (.getLine (->cm-ed e) l))
+  (be/-line (backend e) l))
 
 (defn first-line
   "Returns the first line of editor `e`.
 
   See [firstLine](http://codemirror.net/doc/manual.html#firstLine)."
   [e]
-  (.firstLine (->cm-ed e)))
+  (be/-first-line (backend e)))
 
 (defn last-line
   "Returns the last line of editor `e`.
 
   See [lastLine](http://codemirror.net/doc/manual.html#lastLine)."
   [e]
-  (.lastLine (->cm-ed e)))
+  (be/-last-line (backend e)))
 
 (defn line-handle
   "Returns `LineHandle` object from editor `e` for line `l`.
@@ -606,10 +613,7 @@
 
   See range."
   [ed dir]
-  (let [loc (->cursor ed)]
-    (if (> dir 0)
-      (range ed loc (adjust-loc loc dir))
-      (range ed (adjust-loc loc dir) loc))))
+  (be/-get-char (backend ed) dir))
 
 (defn indent-line
   "Indents the line `l` based on the `dir` specified for editor `e`.
@@ -672,14 +676,14 @@
 
   See [changeGeneration](http://codemirror.net/doc/manual.html#changeGeneration)."
   [e]
-  (.changeGeneration (->cm-ed e)))
+  (be/-generation (backend e)))
 
 (defn dirty?
   "Returns true if document is not clean for generation `gen`. The document is not clean if it has been modified since it was in a clean state.
 
   See [isClean](http://codemirror.net/doc/manual.html#isClean)."
   [e gen]
-  (not (.isClean (->cm-ed e) gen)))
+  (be/-dirty? (backend e) gen))
 
 (defn get-doc
   "Returns currently active document for the editor.

@@ -23,3 +23,6 @@
 # playwright e2e artifacts
 /test-results/
 /playwright-report/
+
+# clj-kondo lint cache
+.clj-kondo/.cache/
