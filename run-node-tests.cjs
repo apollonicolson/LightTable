@@ -27,6 +27,8 @@ for (const k of [
   'DocumentFragment', 'Text', 'Comment', 'Event', 'CustomEvent',
   'KeyboardEvent', 'MouseEvent', 'MutationObserver', 'getComputedStyle',
   'NodeFilter', 'DOMParser', 'XMLSerializer',
+  // CM6 EditorView reaches for these at mount/measure time:
+  'Range', 'DOMRect', 'DOMRectReadOnly',
 ]) {
   if (dom.window[k] !== undefined) global[k] = dom.window[k];
 }
