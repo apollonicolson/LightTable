@@ -2,7 +2,11 @@
   "name": "lighttable-build",
   "private": true,
   "description": "Build tooling (shadow-cljs) for the LightTable CLJS renderer.",
+  "scripts": {
+    "test": "shadow-cljs compile test && node run-node-tests.cjs"
+  },
   "devDependencies": {
+    "jsdom": "^29.1.1",
     "shadow-cljs": "3.4.11"
   },
   "dependencies": {

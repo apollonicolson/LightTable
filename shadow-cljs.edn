@@ -103,9 +103,12 @@
                       :infer-externs false}
    :devtools   {:enabled false}}
 
-  ;; node-test: for dependency-free / pure namespaces (no Electron/DOM).
-  ;; Run: npx shadow-cljs compile test && node target/node-tests.js
-  ;; (Electron/DOM-coupled namespaces need a :browser-test build instead.)
+  ;; node-test: pure namespaces AND DOM-coupled ones (lt.object, lt.util.dom,
+  ;; singultus-built nodes) via the jsdom polyfill runner.
+  ;; Run: npm test   (= shadow-cljs compile test && node run-node-tests.cjs)
+  ;; run-node-tests.cjs installs jsdom DOM globals before requiring the bundle.
+  ;; Only canvas-2D / EventSource / real-layout tests still need a :browser-test
+  ;; build run in Electron (see ADR 0007 — that harness is the next testing step).
   :test
   {:target    :node-test
    :output-to "target/node-tests.js"
