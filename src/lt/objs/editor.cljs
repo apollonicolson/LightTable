@@ -61,13 +61,12 @@
     (.-parentElement (.getScrollerElement (->cm-ed e)))))
 
 (defn backend
-  "The IEditorBackend for editor `e` (M5, ADR 0008). A CM6 editor carries an
-  explicit `:backend`; everything else is wrapped lazily as a CM5 backend, so
-  existing CM5 editors need no creation-path change and behavior is preserved."
+  "The Cm6Backend for editor `e` (ADR 0009). An editor object carries an explicit
+  `:backend`; a bare view (some behaviors pass `(:ed @obj)`) is wrapped on the fly."
   [e]
   (if (and (satisfies? IDeref e) (:backend @e))
     (:backend @e)
-    (be/cm5-backend (->cm-ed e))))
+    (be/cm6-backend (->cm-ed e))))
 
 (defn exec-command
   "Run a named editor command and return whether it was HANDLED — CM6: the

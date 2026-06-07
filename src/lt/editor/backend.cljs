@@ -1,16 +1,11 @@
 (ns lt.editor.backend
-  "Pluggable editor backend behind the lt.objs.editor seam (M5 slice 4, ADR 0008).
+  "Editor backend behind the lt.objs.editor seam (ADR 0008/0009). CM6 is now the
+  ONLY backend — the CM5 deftype + the backend feature-flag were removed once the
+  default flipped. The seam's capability fns delegate to this single Cm6Backend
+  (value/cursor/selection/line/history). Positions are LightTable edn `{:line :ch}`,
+  0-based.
 
-  lt.objs.editor's public API is the contract. Its capability fns delegate to an
-  IEditorBackend so the SAME seam drives either CM5 (the existing instance) or
-  CM6 (an EditorView via lt.editor.cm6). This is branch-by-abstraction: CM5 is
-  the default and stays the live editor until CM6 passes the parity suite; the
-  flag then flips. Only the migrated capabilities (value/cursor/selection/line/
-  history) are on the protocol so far — others stay direct-CM5 (per-capability
-  migration). Positions are LightTable edn `{:line :ch}`, 0-based.
-
-  A closed, performance-sensitive op set → a protocol (not multimethods, which
-  fit the OPEN behavior set of the BOT dispatch work in lt.object.dispatch)."
+  A closed op set → a protocol (kept as the seam's one capability interface)."
   (:require [lt.editor.cm6 :as cm6]
             [lt.editor.cm6.view :as view]))
 
@@ -35,34 +30,6 @@
   (-redo [b])
   (-generation [b])
   (-dirty? [b gen]))
-
-;; ── CM5 backend — mirrors the existing lt.objs.editor CodeMirror-5 calls ──────
-(deftype Cm5Backend [cm]
-  IEditorBackend
-  (-value [_] (.getValue cm))
-  (-set-val [_ v] (.setValue cm (or v "")))
-  (-cursor [_ side] (let [p (.getCursor cm side)] {:line (.-line p) :ch (.-ch p)}))
-  (-move-cursor [_ pos] (.setCursor cm (clj->js (or pos {:line 0 :ch 0}))))
-  (-line-count [_] (.lineCount cm))
-  (-line [_ n] (.getLine cm n))
-  (-first-line [_] (.firstLine cm))
-  (-last-line [_] (.lastLine cm))
-  (-replace [_ from to v] (.replaceRange cm v (clj->js from) (clj->js to)))
-  (-selection? [_] (.somethingSelected cm))
-  (-selection [_] (.getSelection cm))
-  (-selection-bounds [this] (when (.somethingSelected cm)
-                              {:from (-cursor this "start") :to (-cursor this "end")}))
-  (-set-selection [_ from to] (.setSelection cm (clj->js from) (clj->js to)))
-  (-replace-selection [_ v after] (.replaceSelection cm v (name (or after :end)) "+input"))
-  (-insert-at-cursor [this v] (.replaceRange cm v (clj->js (-cursor this nil))))
-  (-get-char [this dir] (let [c (-cursor this nil)
-                              a (update c :ch + dir)
-                              [from to] (if (> dir 0) [c a] [a c])]
-                          (.getRange cm (clj->js from) (clj->js to))))
-  (-undo [_] (.undo cm))
-  (-redo [_] (.redo cm))
-  (-generation [_] (.changeGeneration cm))
-  (-dirty? [_ gen] (not (.isClean cm gen))))
 
 ;; ── CM6 backend — reads from view.state via cm6; writes dispatch to the view ──
 (deftype Cm6Backend [view]
@@ -103,13 +70,4 @@
   (-generation [_] (cm6/->generation (view/view-state view)))
   (-dirty? [_ gen] (cm6/dirty? (view/view-state view) gen)))
 
-(defn cm5-backend [cm]   (->Cm5Backend cm))
 (defn cm6-backend [view] (->Cm6Backend view))
-
-;; ── the feature flag ─────────────────────────────────────────────────────────
-;; Selects the backend for NEWLY created editors. Default :cm5 — CM6 stays a
-;; parallel backend until it passes the parity suite, then this flips to :cm6.
-(defonce ^:private !kind (atom :cm5))
-(defn active-kind [] @!kind)
-(defn use-backend! [k] (reset! !kind k))
-(defn cm6-active? [] (= :cm6 @!kind))
