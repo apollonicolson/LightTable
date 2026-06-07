@@ -25,6 +25,7 @@
             [lt.editor.cm6.options :as cm6-options]
             [lt.editor.cm6.modes :as cm6-modes]
             [lt.editor.cm6.commands :as cm6-commands]
+            [lt.editor.cm6.comment :as cm6-comment]
             [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
@@ -686,12 +687,19 @@
   [e dir]
   (.indentSelection (->cm-ed e) dir))
 
+;; Comment seam (ADR 0009). CM6 toggleComment/lineComment StateCommands act on the
+;; view's CURRENT selection, so the CM6 path ignores from/to/opts (the view already
+;; holds the user's selection that pool/do-commenting derived them from). Comment
+;; tokens come from the language's commentTokens languageData (cm6.modes attaches
+;; them to the legacy modes). CM5 path unchanged.
 (defn line-comment
   "Changes lines within range of `from` and `to` into line comments for editor `e`.
 
   See [lineComment](http://codemirror.net/doc/manual.html#lineComment)."
   [e from to opts]
-  (.lineComment (->cm-ed e) (clj->js from) (clj->js to) (clj->js opts)))
+  (if (cm6? e)
+    (cm6-comment/line! (->cm-ed e))
+    (.lineComment (->cm-ed e) (clj->js from) (clj->js to) (clj->js opts))))
 
 (defn uncomment
   "Attempts to uncomment lines within range of `from` and `to` for editor `e`.
@@ -700,22 +708,28 @@
 
   See [uncomment](http://codemirror.net/doc/manual.html#uncomment)."
   [e from to opts]
-  (.uncomment (->cm-ed e) (clj->js from) (clj->js to) (clj->js opts)))
+  (if (cm6? e)
+    (cm6-comment/uncomment! (->cm-ed e))
+    (.uncomment (->cm-ed e) (clj->js from) (clj->js to) (clj->js opts))))
 
 (defn block-comment
   "Wrap lines within range of `from` and `to` for editor `e`.
 
   See [blockComment](http://codemirror.net/doc/manual.html#blockComment)."
   [e from to opts]
-  (.blockComment (->cm-ed e) (clj->js from) (clj->js to) (clj->js opts)))
+  (if (cm6? e)
+    (cm6-comment/block! (->cm-ed e))
+    (.blockComment (->cm-ed e) (clj->js from) (clj->js to) (clj->js opts))))
 
 (defn toggle-comment
   "Toggle comment and if multiline toggle apply block comment"
   [e from to opts]
-  (when-not (uncomment e from to opts)
-    (if-not (= (:line from) (:line to))
-      (block-comment e from to opts)
-      (line-comment e from (->cursor e "end") opts))))
+  (if (cm6? e)
+    (cm6-comment/toggle! (->cm-ed e))
+    (when-not (uncomment e from to opts)
+      (if-not (= (:line from) (:line to))
+        (block-comment e from to opts)
+        (line-comment e from (->cursor e "end") opts)))))
 
 (defn ->generation
   "Returns an integer that can be used to test if edits have occurred.

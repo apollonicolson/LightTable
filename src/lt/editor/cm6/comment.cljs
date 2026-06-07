@@ -18,7 +18,10 @@
 (def ^:private toggle-cmd       (.-toggleComment cm-commands))
 (def ^:private toggle-line-cmd  (.-toggleLineComment cm-commands))
 (def ^:private toggle-block-cmd (.-toggleBlockComment cm-commands))
+(def ^:private line-cmd         (.-lineComment cm-commands))
+(def ^:private block-cmd        (.-blockComment cm-commands))
 
+;; ── pure state→state (node-tested) ────────────────────────────────────────────
 (defn toggle-line
   "Toggle line comments over the current selection. NEW state (unchanged if the
   language defines no line-comment token)."
@@ -33,3 +36,23 @@
   "Toggle comments over the current selection — line comment when available, else
   block (CM6's toggleComment heuristic, matching CM5 toggle-comment). NEW state."
   [state] (cm6/run-command state toggle-cmd))
+
+(defn line
+  "Always ADD line comments over the selection (CM5 lineComment). NEW state."
+  [state] (cm6/run-command state line-cmd))
+
+(defn block
+  "Always ADD a block comment around the selection (CM5 blockComment). NEW state."
+  [state] (cm6/run-command state block-cmd))
+
+;; ── live view runners (the seam calls these on a CM6 editor's view) ────────────
+;; StateCommands take an EditorView directly and act on its CURRENT selection, so
+;; the seam needs no explicit from/to — the view already holds the user's
+;; selection. Each returns whether the command was handled.
+(defn line!       [view] (boolean (line-cmd view)))
+(defn block!      [view] (boolean (block-cmd view)))
+(defn toggle!     [view] (boolean (toggle-cmd view)))
+(defn uncomment!
+  "CM6 has no pure uncomment; toggleLineComment removes comments when the lines are
+  already commented (and would add them otherwise). Used for :uncomment-selection."
+  [view] (boolean (toggle-line-cmd view)))

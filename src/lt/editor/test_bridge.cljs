@@ -59,7 +59,11 @@
        :insertAtCursor (fn [v] (when-let [e (ed)] (editor/insert-at-cursor e v)) nil)
        :getChar  (fn [dir] (when-let [e (ed)] (editor/get-char e dir)))
        :undo     (fn [] (when-let [e (ed)] (editor/undo e)) nil)
-       :redo     (fn [] (when-let [e (ed)] (editor/redo e)) nil)})
+       :redo     (fn [] (when-let [e (ed)] (editor/redo e)) nil)
+       ;; comment seam (ADR 0009) — CM6 path uses the live selection, so from/to
+       ;; are nil; pool/do-commenting passes the real ones in production.
+       :toggleComment (fn [] (when-let [e (ed)] (editor/toggle-comment e nil nil nil)) nil)
+       :lineComment   (fn [] (when-let [e (ed)] (editor/line-comment e nil nil nil)) nil)})
 
 (defn install!
   "Expose the editor seam on window.__lt_test when LT_TEST_BRIDGE is set. No-op

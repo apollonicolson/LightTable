@@ -144,3 +144,21 @@ test('CM6 live — set-options via compartments (lineNumbers toggles, preserves 
   await lt('setOptions', { lineNumbers: false });
   expect(await gutter()).toBe(false);
 });
+
+// ADR 0009 — first live consumer wiring: comment seam on CM6. Comment tokens come
+// from the language (cm6.modes attaches commentTokens to the legacy clojure mode),
+// and toggleComment/lineComment act on the live selection.
+test('CM6 live — comment seam (clojure toggle + line, via the editor seam)', async () => {
+  await lt('setVal', '(defn f [] 1)');
+  await lt('setMode', 'clojure');
+  await lt('setSelection', { line: 0, ch: 0 }, { line: 0, ch: 5 });
+  await lt('toggleComment');
+  expect(await lt('val')).toBe(';; (defn f [] 1)');   // commentTokens wired
+  await lt('toggleComment');
+  expect(await lt('val')).toBe('(defn f [] 1)');        // toggles back off
+  // lineComment always adds; idempotent when already commented
+  await lt('lineComment');
+  expect(await lt('val')).toBe(';; (defn f [] 1)');
+  await lt('lineComment');
+  expect(await lt('val')).toBe(';; (defn f [] 1)');
+});

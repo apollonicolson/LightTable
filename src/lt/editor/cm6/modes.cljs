@@ -29,18 +29,28 @@
 
 (def ^:private Compartment (.-Compartment cm-state))
 (def ^:private StreamLanguage (.-StreamLanguage cm-lang))
+(def ^:private LanguageSupport (.-LanguageSupport cm-lang))
 (def ^:private javascript (.-javascript lang-js))
 (def ^:private json (.-json lang-json))
 
 (defn- legacy
-  "Wrap a @codemirror/legacy-modes StreamParser as a CM6 Language."
-  [parser]
-  (.define StreamLanguage parser))
+  "Wrap a @codemirror/legacy-modes StreamParser as a CM6 Language. With `data` (a
+  CLJS map of languageData, e.g. {:commentTokens {:line \";;\"}}) it returns a
+  LanguageSupport carrying that data — CM6 reads comment tokens (and more) from
+  languageData, which a bare StreamLanguage does NOT define, so toggleComment
+  would otherwise no-op on these modes."
+  ([parser] (.define StreamLanguage parser))
+  ([parser data]
+   (let [lang (.define StreamLanguage parser)]
+     (LanguageSupport. lang #js [(.of (.-data lang) (clj->js data))]))))
 
 (def syntax-highlighting
   "Generic highlighting extension — paints whatever language the compartment
   holds. Goes in the base extensions."
   (.syntaxHighlighting cm-lang (.-defaultHighlightStyle cm-lang)))
+
+;; Clojure-family line comment (";;" matches LightTable/clojuregist convention).
+(def ^:private clj-comments {:commentTokens {:line ";;"}})
 
 ;; mode/mime name (lower-cased) -> thunk producing a CM6 LanguageSupport.
 (def ^:private registry
@@ -51,22 +61,23 @@
    "ts"         #(javascript #js {:typescript true})
    "tsx"        #(javascript #js {:typescript true :jsx true})
    "json"       #(json)
-   ;; legacy-modes bridge (StreamLanguage) — the long tail
-   "clojure"    #(legacy (.-clojure lm-clojure))
-   "clj"        #(legacy (.-clojure lm-clojure))
-   "cljs"       #(legacy (.-clojure lm-clojure))
-   "cljc"       #(legacy (.-clojure lm-clojure))
-   "edn"        #(legacy (.-clojure lm-clojure))
-   "python"     #(legacy (.-python lm-python))
-   "py"         #(legacy (.-python lm-python))
-   "ruby"       #(legacy (.-ruby lm-ruby))
-   "rb"         #(legacy (.-ruby lm-ruby))
-   "css"        #(legacy (.-css lm-css))
-   "xml"        #(legacy (.-xml lm-xml))
-   "html"       #(legacy (.-html lm-xml))
-   "shell"      #(legacy (.-shell lm-shell))
-   "bash"       #(legacy (.-shell lm-shell))
-   "sql"        #(legacy (.-standardSQL lm-sql))})
+   ;; legacy-modes bridge (StreamLanguage) — the long tail. commentTokens attached
+   ;; so toggleComment works (the legacy parsers don't carry languageData).
+   "clojure"    #(legacy (.-clojure lm-clojure) clj-comments)
+   "clj"        #(legacy (.-clojure lm-clojure) clj-comments)
+   "cljs"       #(legacy (.-clojure lm-clojure) clj-comments)
+   "cljc"       #(legacy (.-clojure lm-clojure) clj-comments)
+   "edn"        #(legacy (.-clojure lm-clojure) clj-comments)
+   "python"     #(legacy (.-python lm-python) {:commentTokens {:line "#"}})
+   "py"         #(legacy (.-python lm-python) {:commentTokens {:line "#"}})
+   "ruby"       #(legacy (.-ruby lm-ruby) {:commentTokens {:line "#"}})
+   "rb"         #(legacy (.-ruby lm-ruby) {:commentTokens {:line "#"}})
+   "css"        #(legacy (.-css lm-css) {:commentTokens {:block {:open "/*" :close "*/"}}})
+   "xml"        #(legacy (.-xml lm-xml) {:commentTokens {:block {:open "<!--" :close "-->"}}})
+   "html"       #(legacy (.-html lm-xml) {:commentTokens {:block {:open "<!--" :close "-->"}}})
+   "shell"      #(legacy (.-shell lm-shell) {:commentTokens {:line "#"}})
+   "bash"       #(legacy (.-shell lm-shell) {:commentTokens {:line "#"}})
+   "sql"        #(legacy (.-standardSQL lm-sql) {:commentTokens {:line "--"}})})
 
 (defn supports?
   "Does CM6 have a language for `mode` yet?"
