@@ -56,10 +56,9 @@
 (def default-pattern #"[\w_$]")
 
 (defn get-pattern [ed]
-  ;; CM6 has no inner-mode (returns nil) — fall back to the per-editor :hint-pattern
-  ;; (set by langs behaviors) or the default. CM5 still reads the mode's hint-pattern.
-  (let [mode (editor/inner-mode ed)]
-    (or (:hint-pattern @ed) (when mode (aget mode "hint-pattern")) default-pattern)))
+  ;; CM6 has no per-mode hint-pattern — use the per-editor :hint-pattern (set by
+  ;; langs behaviors) or the default token pattern.
+  (or (:hint-pattern @ed) default-pattern))
 
 (defn get-token [ed pos]
   (let [line (editor/line ed (:line pos))
@@ -273,9 +272,9 @@
   ([this opts]
    (let [pos (editor/->cursor this)
          token (get-token this pos)
-         ;; CM6 has no line handles — track typing via the editor :change event
-         ;; (::cm6-hint-refresh) instead of a per-line "change" listener.
-         line (when-not (editor/cm6? this) (editor/line-handle this (:line pos)))
+         ;; CM6 has no line handles — typing is tracked via the editor :change event
+         ;; (::cm6-hint-refresh), so there is no per-line listener to register.
+         line nil
          elem (object/->content hinter)]
      (ctx/in! [:editor.keys.hinting.active] this)
      (object/merge! hinter {:token token

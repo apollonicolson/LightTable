@@ -29,6 +29,7 @@
             [lt.editor.cm6.find :as cm6-find]
             [lt.editor.cm6.results :as cm6-results]
             [lt.editor.cm6.watches :as cm6-watches]
+            [lt.editor.cm6.fold :as cm6-fold]
             [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
@@ -100,36 +101,11 @@
     (cm6-options/reconfigure! (->cm-ed e) (:cm6-compartments @e) m))
   e)
 
-(defn clear-history
-  "Clear the history of editor `e`. Returns `e`."
-  [e]
-  (.clearHistory (->cm-ed e))
-  e)
-
-(defn get-history
-  "Returns the history of editor `e`."
-  [e]
-  (.getHistory (->cm-ed e)))
-
-(defn set-history
-  "Set the history of editor `e` with provided value `v`."
-  [e v]
-  (.setHistory (->cm-ed e) v)
-  e)
-
+;; clear-history (.clearHistory) + get/set-history removed with CM5 (no callers).
 
 ;;*********************************************************
 ;; commands
 ;;*********************************************************
-
-(defn- expand-tab [cm]
-  (cond
-   (.somethingSelected cm) (.indentSelection cm "add")
-   (.getOption cm "indentWithTabs") (.replaceSelection cm "\t" "end" "+input")
-   :else
-   (let [spaces (.join (js/Array (inc (.getOption cm "indentUnit"))) " ")]
-     (.replaceSelection cm spaces "end" "+input"))))
-
 
 ;;*********************************************************
 ;; Creating
@@ -173,14 +149,9 @@
   [e pos]
   (cm6/pos->offset (cm6-view/view-state (->cm-ed e)) pos))
 
-;; cursor (getCursor) / find-marks (findMarksAt) / bookmark (setBookmark) removed
-;; with CM5 (no callers). `mark` (below) stays — the watches source transform marks
-;; a headless doc.
-
-(defn mark
-  "Marks text within [from,to) of `e`'s doc (used on the headless transform doc)."
-  [e from to opts]
-  (.markText (->cm-ed e) (clj->js from) (clj->js to) (clj->js opts)))
+;; cursor (getCursor) / find-marks (findMarksAt) / bookmark (setBookmark) / mark
+;; (markText) removed with CM5 (no callers). CM6 watch/result marks go through the
+;; cm6.watches / cm6.results decoration seams instead.
 
 (defn option
   "Value for option `o`. CM6 has no flat getOption; the few options consumers read
@@ -203,12 +174,7 @@
   (cm6-modes/set-mode! (->cm-ed e) (:cm6-language @e) m)
   e)
 
-(defn ->mode
-  "Return outer mode object for editor `e`.
-
-  See [getMode](http://codemirror.net/doc/manual.html#getMode)."
-  [e]
-  (.getMode (->cm-ed e)))
+;; ->mode (getMode) removed with CM5 (no callers).
 
 (defn focus
   "Return focus of editor.
@@ -358,12 +324,7 @@
   [e start end]
   (be/-set-selection (backend e) start end))
 
-(defn set-extending
-  "Sets editor's 'extending' flag to `ext?`.
-
-  See [setExtending](http://codemirror.net/doc/manual.html#setExtending)."
-  [e ext?]
-  (.setExtending (->cm-ed e) ext?))
+;; set-extending (setExtending) removed with CM5 (no callers).
 
 (defn replace-selection
   "Replace selection with `neue` for editor `e`.
@@ -402,12 +363,8 @@
   [e]
   (replace-selection e (platform/paste)))
 
-(defn char-coords
-  "Returns position and dimension, based off of `pos` for editor `e`, in map consisting of `{:left :right :top :bottom}`.
-
-  See [charChords](http://codemirror.net/doc/manual.html#charCoords)."
-  [e pos]
-  (js->clj (.charCoords (->cm-ed e) (clj->js pos)) :keywordize-keys true :force-obj true))
+;; char-coords (charCoords) removed with CM5 (no callers). CM6 screen coords come
+;; from coordsAtPos (see position-hint).
 
 (defn operation
   "Returns `e` rather than the return value of your function `func`.
@@ -427,24 +384,9 @@
     (ev/capture elem :mousedown func)
     e))
 
-(defn extension
-  "Add function `func` named `name` to CodeMirror API.
-
-  See [defineExtension](http://codemirror.net/doc/manual.html#defineExtension)."
-  [name func]
-  (.defineExtension js/CodeMirror name func))
-
-(defn line-widget
-  "Add line widget `elem` (an element), along with any options, at `line` to editor `e`.
-
-  See [addLineWidget](http://codemirror.net/doc/manual.html#addLineWidget)."
-  [e line elem & [opts]]
-  (.addLineWidget (->cm-ed e) line elem (clj->js opts)))
-
-(defn remove-line-widget
-  "Remove widget `widg` from editor `e`. Opposite of `line-widget`."
-  [e widg]
-  (.removeLineWidget (->cm-ed e) widg))
+;; extension (defineExtension) / line-widget (addLineWidget) / remove-line-widget
+;; (removeLineWidget) removed with CM5 (no callers). CM6 eval-result widgets go
+;; through the cm6.results decoration seam below.
 
 ;; Eval result-widget seam (ADR 0009): a CM6 decoration id (cm6.results). Decorations
 ;; auto-track through edits, so the CM5 move/relocate machinery has no counterpart.
@@ -509,19 +451,8 @@
   [e]
   (be/-last-line (backend e)))
 
-(defn line-handle
-  "Returns `LineHandle` object from editor `e` for line `l`.
-
-  See [getLineHandle](http://codemirror.net/doc/manual.html#getLineHandle)."
-  [e l]
-  (.getLineHandle (->cm-ed e) l))
-
-(defn lh->line
-  "Given LineHandle object `lh`, returns integer for corresponding line from editor `e`.
-
-  See [getLineNumber](http://codemirror.net/doc/manual.html#getLineNumber)."
-  [e lh]
-  (.getLineNumber (->cm-ed e) lh))
+;; line-handle (getLineHandle) / lh->line (getLineNumber) removed with CM5 — CM6
+;; has no LineHandle; consumers key by line number.
 
 (defn line-length
   "Returns the length of line `l` from editor `e`."
@@ -544,34 +475,16 @@
              {:line l :ch length}
              text)))
 
-(defn +line-class
-  "Add CSS class name `class` to LineHandle `lh` at element `plane` for editor `e`.
+;; Line CSS classes (CM5 add/removeLineClass) — a CM6 line-decoration impl is a
+;; deferred refinement; these are no-ops for now (only the langs behavior-helper
+;; line highlight, a cosmetic cue, depends on them). No crash on CM6.
+(defn +line-class [_e _lh _plane _class] nil)
+(defn -line-class [_e _lh _plane _class] nil)
 
-  See [addLineClass](http://codemirror.net/doc/manual.html#addLineClass)."
-  [e lh plane class]
-  (.addLineClass (->cm-ed e) lh (name plane) (name class)))
+;; show-hints (CodeMirror.showHint addon) removed with CM5 (no callers).
 
-(defn -line-class
-  "Remove CSS class name `class` from LineHandle `lh` at element `plane` for editor `e`.
-  Opposite of `+line-class`.
-
-  See [removeLineClass](http://codemirror.net/doc/manual.html#removeLineClass)."
-  [e lh plane class]
-  (.removeLineClass (->cm-ed e) lh (name plane) (name class)))
-
-(defn show-hints
-  "Display hint `hint-fn` for editor `e` with any provided options.
-
-  See [show-hint.js](http://codemirror.net/addon/hint/show-hint.js)."
-  [e hint-fn options]
-  (js/CodeMirror.showHint (->cm-ed e) hint-fn (clj->js options))
-  e)
-
-(defn inner-mode
-  "CM6 has no innerMode (a Lezer tree, not a stream mode) — always nil; callers
-  fall back (e.g. auto-complete's hint-pattern → per-editor :hint-pattern/default)."
-  ([_e] nil)
-  ([_e _state] nil))
+;; inner-mode (CM5 innerMode) removed — CM6 has no stream modes; auto-complete's
+;; hint-pattern falls back to the per-editor :hint-pattern / default.
 
 (defn position-hint
   "Position popup `elem` (already in the DOM) at editor position `pos` ({:line :ch})
@@ -693,15 +606,11 @@
   [_e] nil)
 
 (defn fold-code
-  "Attempts to fold code starting at position `loc`. If position is not provided then folding will be attempted at the cursor position.
-
-  If the code is already folded then an attempt to unfold will occur.
-
-  See [foldcode.js](http://codemirror.net/addon/fold/foldcode.js) addon."
-  ([e]
-   (fold-code e (->cursor e)))
-  ([e loc]
-   (.foldCode (->cm-ed e) (clj->js loc))))
+  "Toggle the fold at the cursor (CM6 foldCode StateCommand; the editor carries the
+  codeFolding extension). `loc` is accepted for call-site compat but ignored —
+  CM6 folds at the selection."
+  ([e] (cm6-fold/fold-code! (->cm-ed e)))
+  ([e _loc] (cm6-fold/fold-code! (->cm-ed e))))
 
 (defn- gutter-widths [e]
   (let [gutter-div (dom/$ :div.CodeMirror-gutters (object/->content e))
@@ -761,6 +670,7 @@
                                            (:field cm6-find/layer)
                                            (:field cm6-results/layer)
                                            (:field cm6-watches/layer)
+                                           (cm6-fold/extension)
                                            (cm6-modes/initial lang-compartment (:mime info))])
                        ;; Seed from :content (transient editors) or, for a file editor,
                        ;; from the doc's text (opener passes :doc, not :content). The
@@ -1019,34 +929,10 @@
                              :click (fn []
                                       (select-all this))})))
 
-(def mode-blacklist "Modes to not load on startup"
-  #{"clojure" "css" "htmlembedded" "htmlmixed" "javascript" "python"})
-
-(behavior ::init-codemirror
-          :triggers #{:init}
-          :reaction (fn [this]
-                      (load/js "core/node_modules/codemirror/addon/edit/matchbrackets.js" :sync)
-                      (load/js "core/node_modules/codemirror/addon/edit/closebrackets.js" :sync)
-                      (load/js "core/node_modules/codemirror/addon/comment/comment.js" :sync)
-                      (load/js "core/node_modules/codemirror/addon/selection/active-line.js" :sync)
-                      (load/js "core/node_modules/codemirror/addon/mode/overlay.js" :sync)
-                      (load/js "core/node_modules/codemirror/addon/scroll/scrollpastend.js" :sync)
-                      (doseq [file (files/ls (files/lt-home "core/node_modules/codemirror/addon/fold"))
-                              :when (= (files/ext file) "js")]
-                        (load/js (str "core/node_modules/codemirror/addon/fold/" file) :sync))
-                      (load/css "node_modules/codemirror/addon/fold/foldgutter.css")
-                      (load/js "core/node_modules/codemirror/keymap/sublime.js" :sync)
-
-                      ;; Provides defineSimpleMode for some modes
-                      (load/js "core/node_modules/codemirror/addon/mode/simple.js" :sync)
-                      (doseq [path (files/filter-walk #(and (= (files/ext %) "js")
-                                                            (not (some (fn [m] (> (.indexOf % (str "core/node_modules/codemirror/mode/" m "/")) -1))
-                                                                       mode-blacklist))
-                                                            ;; Remove test files
-                                                            (not (.endsWith % "test.js")))
-                                                      (files/lt-home "core/node_modules/codemirror/mode"))]
-                        (load/js path :sync))
-                      (aset js/CodeMirror.keyMap.basic "Tab" expand-tab)))
+;; ::init-codemirror behavior + mode-blacklist removed with CM5 (loaded CM5
+;; addons/modes and set the CM5 Tab keymap to expand-tab). CM6 brings its own
+;; bracket-matching/closing, comments, folding, active-line, and language modes
+;; (cm6.modes) via the object*'s initial extensions.
 
 (behavior ::load-addon
           :triggers #{:object.instant-load}
@@ -1065,17 +951,8 @@
                                                        this
                                                        (filter #(= (files/ext %) "css") paths)))))
 
-(behavior ::set-rulers
-          :triggers #{:object.instant}
-          :type :user
-          :desc "Editor: Set CodeMirror rulers"
-          :params [{:label "Vector of rulers"
-                    :example "[{:color \"#cfc\" :column 100 :lineStyle \"dashed\"}]"}]
-          :reaction (fn [this rulers]
-                      (when-not (.getOption (->cm-ed this) "rulers")
-                        (load/js "core/node_modules/codemirror/addon/display/rulers.js" :sync))
-                      (let [rulers (or rulers [{:lineStyle "dashed" :color "#aff" :column 80}])]
-                        (set-options this {:rulers (clj->js rulers)}))))
+;; ::set-rulers behavior removed with CM5 (called .getOption + loaded the CM5
+;; rulers addon; no CM6 counterpart wired).
 
 (behavior ::autoclose-brackets
           :triggers #{:object.instant}

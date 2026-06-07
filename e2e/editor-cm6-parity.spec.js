@@ -303,6 +303,19 @@ test('CM6 live — range / center-cursor / indent (CM6 impls, no CM5-method cras
   expect((await lt('val')).split('\n')[1].startsWith(' ')).toBe(true);
 });
 
+// ADR 0009 Tier 3 — fold-code on CM6 (@codemirror/language foldCode + the
+// codeFolding extension; CM5's .foldCode would have crashed on the view).
+test('CM6 live — fold-code (folds a foldable block, no CM5-method crash)', async () => {
+  await lt('setVal', 'function f() {\n  return 1;\n}\n');
+  await lt('setMode', 'javascript');
+  await lt('moveCursor', { line: 0, ch: 13 });   // on the opening brace line
+  await lt('foldCode');
+  await win.waitForFunction(() => document.querySelectorAll('.cm-foldPlaceholder').length > 0)
+    .catch(() => {});
+  expect(await win.evaluate(() => document.querySelectorAll('.cm-foldPlaceholder').length))
+    .toBeGreaterThan(0);                          // a fold placeholder rendered
+});
+
 // ADR 0009 step 4 — THE FLIP: a default editor (no :backend) is now CM6.
 test('CM6 live — flip: default editor is CM6', async () => {
   expect(await lt('openDefault', 'default editor')).toBe(true);

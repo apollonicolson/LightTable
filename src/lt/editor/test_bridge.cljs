@@ -62,6 +62,7 @@
        :range    (fn [from to] (when-let [e (ed)] (editor/range e (js-pos from) (js-pos to))))
        :indentSelection (fn [dir] (when-let [e (ed)] (editor/indent-selection e dir)) nil)
        :centerCursor (fn [] (when-let [e (ed)] (editor/center-cursor e)) nil)
+       :foldCode (fn [] (when-let [e (ed)] (editor/fold-code e)) nil)
        :changeCount (fn [] (when-let [e (ed)] (::change-count @e 0)))
        :val      (fn [] (when-let [e (ed)] (editor/->val e)))
        :setVal   (fn [v] (when-let [e (ed)] (editor/set-val e v)) nil)
