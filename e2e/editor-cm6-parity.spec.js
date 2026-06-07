@@ -192,3 +192,29 @@ test('CM6 live — find seam (case-insensitive default + replace-all)', async ()
   await lt('undo');
   expect(await lt('val')).toBe('Cat cat CAT');     // single undo reverts all
 });
+
+// ADR 0009 — eval result widgets on CM6 (cm6.results over a decoration layer).
+// CM5 attached bookmarks/line-widgets to LineHandles and relocated them by hand;
+// CM6 decorations auto-track, so a result follows its line through edits for free.
+test('CM6 live — eval result widgets (render, auto-track through edits, remove)', async () => {
+  await lt('setVal', 'one\ntwo\nthree');
+  const widgets = () => win.evaluate(() => document.querySelectorAll('.cm6-eval-result').length);
+  expect(await widgets()).toBe(0);
+  // inline result on line 1 ("two")
+  await lt('addResult', 'r1', 1, '=> 42', false);
+  await win.waitForFunction(() => document.querySelectorAll('.cm6-eval-result').length > 0);
+  expect(await widgets()).toBe(1);
+  expect(await lt('resultPresent', 'r1')).toBe(true);
+  expect(await lt('resultLine', 'r1')).toBe(1);
+  // insert a line ABOVE → the result auto-tracks to its new line (no manual move)
+  await lt('replace', { line: 0, ch: 0 }, { line: 0, ch: 0 }, 'zero\n');
+  expect(await lt('resultLine', 'r1')).toBe(2);
+  expect(await lt('resultPresent', 'r1')).toBe(true);
+  // block result (underline/exception style) renders too
+  await lt('addResult', 'r2', 0, 'boom', true);
+  expect(await widgets()).toBe(2);
+  // remove by id
+  await lt('removeResult', 'r1', false);
+  expect(await lt('resultPresent', 'r1')).toBe(false);
+  expect(await widgets()).toBe(1);
+});

@@ -27,6 +27,7 @@
             [lt.editor.cm6.commands :as cm6-commands]
             [lt.editor.cm6.comment :as cm6-comment]
             [lt.editor.cm6.find :as cm6-find]
+            [lt.editor.cm6.results :as cm6-results]
             [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
@@ -560,6 +561,37 @@
   [e widg]
   (.removeLineWidget (->cm-ed e) widg))
 
+;; Eval result-widget seam (ADR 0009). A "handle" abstracts CM5 bookmark/lineWidget
+;; (TextMarker/LineHandle identity) and CM6 decoration ids, so eval.cljs stores one
+;; handle and never touches raw CM marks. CM6 decorations auto-track through edits,
+;; so the CM5 move/relocate machinery has no CM6 counterpart (auto-tracking).
+(defn add-result-widget
+  "Add an eval result widget DOM `el` at 0-based `line`. `opts`: {:block? — render
+  below the line (underline/exception) vs inline at line end; :id — CM6 tracking
+  id}. Returns a handle: the CM6 id, or the CM5 mark/lineWidget."
+  [e line el {:keys [block? id] :as opts}]
+  (if (cm6? e)
+    (cm6-results/add! (->cm-ed e) id line el opts)
+    (if block?
+      (line-widget e line el {:coverGutter false})
+      (bookmark e {:line line} {:widget el :insertLeft true}))))
+
+(defn remove-result-widget
+  "Remove the result widget `handle`. `block?` selects the CM5 removal path."
+  [e handle block?]
+  (if (cm6? e)
+    (cm6-results/remove! (->cm-ed e) handle)
+    (if block?
+      (remove-line-widget e handle)
+      (.clear handle))))
+
+(defn result-widget-present?
+  "True if result `handle` is still attached (its line not deleted)."
+  [e handle]
+  (if (cm6? e)
+    (cm6-results/present? (->cm-ed e) handle)
+    (boolean (.find handle))))
+
 (defn line
   "Returns the content of line `l` from editor `e`.
 
@@ -877,6 +909,7 @@
                                              cm6-view/editing-keymap
                                              cm6-modes/syntax-highlighting
                                              (:field cm6-find/layer)
+                                             (:field cm6-results/layer)
                                              (cm6-modes/initial lang-compartment (:mime info))])
                          state (cm6/make-state (or (:content info) "") extra)
                          view (cm6-view/create-view nil {:state state})]
