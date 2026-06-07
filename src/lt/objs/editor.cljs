@@ -20,6 +20,7 @@
   (:require [singultus.core :as crate]
             [lt.objs.context :as ctx-obj]
             [lt.editor.backend :as be]
+            [lt.editor.cm6.view :as cm6-view]
             [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
@@ -39,10 +40,17 @@
     (:ed @e)
     e))
 
+(defn cm6?
+  "True if editor `e` is CM6-backed (carries :backend-kind :cm6)."
+  [e]
+  (and (satisfies? IDeref e) (= :cm6 (:backend-kind @e))))
+
 (defn ->elem
   "Return DOM element of editor `e`'s CodeMirror object"
   [e]
-  (.-parentElement (.getScrollerElement (->cm-ed e))))
+  (if (cm6? e)
+    (cm6-view/dom (->cm-ed e))
+    (.-parentElement (.getScrollerElement (->cm-ed e)))))
 
 (defn backend
   "The IEditorBackend for editor `e` (M5, ADR 0008). A CM6 editor carries an
@@ -71,8 +79,12 @@
   "Given a map of options, set each pair as an option on editor `e`'s
   CodeMirror object. Returns `e`."
   [e m]
-  (doseq [[k v] m]
-    (.setOption (->cm-ed e) (name k) v))
+  ;; CM6 has no setOption — its equivalents are extensions/compartments (a later
+  ;; capability slice). No-op for CM6 so the :object.instant option behaviors
+  ;; (wrap/line-numbers/fold/tabs) don't crash a CM6 editor.
+  (when-not (cm6? e)
+    (doseq [[k v] m]
+      (.setOption (->cm-ed e) (name k) v)))
   e)
 
 (defn clear-history
@@ -300,7 +312,11 @@
 
   See [refresh](http://codemirror.net/doc/manual.html#refresh)."
   [e]
-  (.refresh (->cm-ed e))
+  ;; CM6 auto-measures and has no .refresh; feature-check so this is safe whether
+  ;; `e` is an editor object, a raw CM5 instance, or a raw CM6 EditorView (some
+  ;; behaviors pass (:ed @obj) directly).
+  (let [cm (->cm-ed e)]
+    (when (.-refresh cm) (.refresh cm)))
   e)
 
 (defn on-move
@@ -752,12 +768,29 @@
 (object* ::editor
          :tags #{:editor :editor.inline-result :editor.keys.normal}
          :init (fn [obj info]
-                 (let [ed (make info)]
-                   (object/merge! obj {:ed ed
-                                       :doc (:doc info)
-                                       :info (dissoc info :content :doc)})
-                   (wrap-object-events ed obj)
-                   (->elem ed))))
+                 (if (= :cm6 (:backend info))
+                   ;; CM6-backed editor (M5): a detached EditorView; its .dom is the
+                   ;; tab element. CM5 event wiring is skipped (CM6 events are a later
+                   ;; capability slice); the seam drives it via :backend.
+                   (let [view (cm6-view/create-view nil {:doc (or (:content info) "")})]
+                     (object/merge! obj {:ed view
+                                         :backend (be/cm6-backend view)
+                                         :backend-kind :cm6
+                                         :info (dissoc info :content :doc)})
+                     ;; Minimal CM6 event wiring: focus/blur on the contenteditable
+                     ;; drive the standard :focus→:active / :blur→:inactive chain
+                     ;; (the CM5 path does this via wrap-object-events). Enough for
+                     ;; pool last-active tracking; richer events are a later slice.
+                     (let [cd (.-contentDOM view)]
+                       (.addEventListener cd "focus" (fn [_] (object/raise obj :focus)))
+                       (.addEventListener cd "blur"  (fn [_] (object/raise obj :blur))))
+                     (cm6-view/dom view))
+                   (let [ed (make info)]
+                     (object/merge! obj {:ed ed
+                                         :doc (:doc info)
+                                         :info (dissoc info :content :doc)})
+                     (wrap-object-events ed obj)
+                     (->elem ed)))))
 
 
 ;;*********************************************************

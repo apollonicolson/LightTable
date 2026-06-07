@@ -11,7 +11,8 @@
   set — it never ships behavior into a normal run. Every fn operates on the
   active editor (`pool/last-active`) and speaks JS-friendly values."
   (:require [lt.objs.editor :as editor]
-            [lt.objs.editor.pool :as pool]))
+            [lt.objs.editor.pool :as pool]
+            [lt.objs.tabs :as tabs]))
 
 (defn- ed [] (pool/last-active))
 
@@ -19,6 +20,14 @@
 
 (defn- bridge []
   #js {:active   (fn [] (boolean (ed)))
+       ;; Open a CM6-backed editor in a real tab and make it active — so the SAME
+       ;; parity assertions run against a LIVE CM6 editor (the ADR 0008 swap check).
+       :openCm6  (fn [content]
+                   (let [e (pool/create {:backend :cm6 :content (or content "")})]
+                     (tabs/add! e)
+                     (tabs/active! e)
+                     (boolean e)))
+       :backendKind (fn [] (when-let [e (ed)] (name (or (:backend-kind @e) :cm5))))
        :val      (fn [] (when-let [e (ed)] (editor/->val e)))
        :setVal   (fn [v] (when-let [e (ed)] (editor/set-val e v)) nil)
        :cursor   (fn [] (when-let [e (ed)] (clj->js (editor/->cursor e))))

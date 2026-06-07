@@ -26,12 +26,15 @@
 (def ^:private cm-redo (.-redo cm-commands))
 
 (defn create-view
-  "Mount an EditorView into DOM element `parent`. `opts` may carry `:doc` (string,
-  default \"\") or `:state` (a prebuilt EditorState; takes precedence). The state
-  carries the standard extensions from `cm6/make-state` unless one is supplied."
+  "Build an EditorView. `parent` (a DOM element) is optional — when nil the view
+  is detached and its `.dom` can be inserted later (the editor object* returns it
+  for the tab). `opts` may carry `:doc` (string, default \"\") or `:state` (a
+  prebuilt EditorState; takes precedence). The state carries the standard
+  extensions from `cm6/make-state` unless one is supplied."
   [parent {:keys [doc state]}]
-  (EditorView. #js {:state (or state (cm6/make-state (or doc "")))
-                    :parent parent}))
+  (let [config #js {:state (or state (cm6/make-state (or doc "")))}]
+    (when parent (set! (.-parent config) parent))
+    (EditorView. config)))
 
 (defn view-state
   "The EditorView's current EditorState — the value every cm6 read accessor takes."
