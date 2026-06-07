@@ -19,16 +19,25 @@ supersedes the hand-rolled `lt.lsp.jsonrpc` codec (retracted) — `transports/fr
 does the same job, spec-verified and byte-accurate, and handles both Content-Length
 (LSP/DAP) and JSON-lines (MCP) framing.
 
-## Files vendored so far (the FRAMING closure only)
+## Packaging decision (resolved 2026-06-07): FULL-SRC VENDOR
 
-    transports/framing.cljc   Content-Length + JSON-lines codecs (encode-message/empty-state/feed)
-    util/platform.cljc        platform shims (cheshire on :clj, native JSON on :cljs)
+The entire `defport/src` tree is vendored here (42 namespaces) at the SHA above —
+one shot, not file-by-file. Rationale: git-dep would force a shadow→deps.edn build-arch
+migration (real risk, a detour); nested submodules (defport inside the lighttable
+submodule) are two-level-painful; incremental vendoring means chasing transitive deps
+each slice. For an OWNED lib (typmk controls both ends), full-src vendor at a recorded
+SHA + re-sync is the simplest thing that works — mergeable, portable, all protocols
+present. shadow compiles only the required closure, so unused namespaces sit harmless.
+Graduate to a git-dep if drift becomes painful (re-sync = re-copy `src/` at a new SHA).
 
-This is the base every protocol uses. The full LSP-client closure (lsp/client, lsp/spec,
-lsp, transports/subprocess, registry, sugar, …) is vendored incrementally as each slice
-needs it — OR the whole library is adopted via git-dep/submodule (PACKAGING DECISION
-pending; see ADR 0007). cheshire/http-kit are `#?(:clj …)`-guarded, so the :cljs build
-uses native JSON/WebSocket — defport runs in the Node-enabled Electron renderer.
+cheshire/http-kit are `#?(:clj …)`-guarded, so the :cljs build uses native JSON/
+WebSocket — defport runs in the Node-enabled Electron renderer. cheshire is on the
+COMPILE classpath (shadow-cljs.edn) only for `util.platform`'s :include-macros loading.
+
+Verified in our toolchain (test/lt/lsp/): `defport_smoke_test` (framing: Content-Length
+round-trip + streaming) and `client_test` (LSP client core: request/response correlation
+by id + notification dispatch, via a fake transport). The live subprocess-transport
+integration against a real server (clojure-lsp — not installed here) is the next slice.
 
 ## Re-syncing
 

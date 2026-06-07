@@ -1,0 +1,1878 @@
+(ns defport.lsp
+  "Language Server Protocol 3.17 implementation for defport.
+
+   This namespace provides the LSP specification as composable building blocks:
+
+   1. **Types** - LSP data structures (Position, Range, Location, TextEdit, etc.)
+   2. **Capabilities** - ServerCapabilities, ClientCapabilities builders
+   3. **Methods** - LSP method constants and registry
+   4. **Messages** - JSON-RPC encoding with Content-Length headers
+   5. **Adapters** - LspAdapter implementing ProtocolAdapter
+
+   Applications compose these primitives to build:
+   - LSP Servers (expose functionality to editors)
+   - LSP Clients (connect to external language servers)
+   - LSP Proxies (bridge/aggregate multiple servers)
+
+   ## Quick Start
+
+   ```clojure
+   ;; Create LSP server adapter
+   (def adapter
+     (create-adapter
+       {:server-info {:name \"my-server\" :version \"1.0.0\"}
+        :capabilities {:hover true
+                       :definition true}}))
+
+   ;; Register method handlers
+   (register-method! adapter \"textDocument/hover\"
+     (fn [params context]
+       {:contents {:kind \"markdown\" :value \"Hello!\"}}))
+
+   ;; Use with defport transport
+   (defport.transports.stdio/start
+     (fn [msg] (protocol-dispatch adapter (:method msg) (:params msg) {})))
+   ```
+
+   ## Spec Reference
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/"
+  (:require [defport.core :as core]
+            [defport.lsp.spec :as spec]
+            [defport.sugar :as sugar :include-macros true]
+            [defport.util.platform :as platform :include-macros true]
+            [clojure.string :as str])
+  )
+
+;; =============================================================================
+;; LSP Protocol Version
+;; =============================================================================
+
+(def protocol-version "3.17")
+
+;; =============================================================================
+;; Section 1: LSP Types
+;; =============================================================================
+;; All types from LSP 3.17 specification as plain Clojure data constructors.
+;; No magic - just functions that return maps matching the spec.
+
+;; -----------------------------------------------------------------------------
+;; Basic Types
+;; -----------------------------------------------------------------------------
+
+(defn position
+  "Create a Position (zero-indexed line and character).
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#position"
+  [line character]
+  {:line line :character character})
+
+(defn range-
+  "Create a Range (start and end positions).
+   Note: Named range- to avoid conflict with clojure.core/range.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#range"
+  ([start-pos end-pos]
+   {:start start-pos :end end-pos})
+  ([start-line start-char end-line end-char]
+   {:start (position start-line start-char)
+    :end (position end-line end-char)}))
+
+(defn location
+  "Create a Location (URI + Range).
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location"
+  ([uri range]
+   {:uri uri :range range})
+  ([uri start-line start-char end-line end-char]
+   {:uri uri :range (range- start-line start-char end-line end-char)}))
+
+(defn location-link
+  "Create a LocationLink (for go-to-definition with origin selection).
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#locationLink"
+  [{:keys [origin-selection-range target-uri target-range target-selection-range]}]
+  (cond-> {:targetUri target-uri
+           :targetRange target-range
+           :targetSelectionRange (or target-selection-range target-range)}
+    origin-selection-range (assoc :originSelectionRange origin-selection-range)))
+
+;; -----------------------------------------------------------------------------
+;; Text Document Types
+;; -----------------------------------------------------------------------------
+
+(defn text-document-identifier
+  "Create a TextDocumentIdentifier.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentIdentifier"
+  [uri]
+  {:uri uri})
+
+(defn versioned-text-document-identifier
+  "Create a VersionedTextDocumentIdentifier.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier"
+  [uri version]
+  {:uri uri :version version})
+
+(defn text-document-item
+  "Create a TextDocumentItem (full document content).
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem"
+  [uri language-id version text]
+  {:uri uri
+   :languageId language-id
+   :version version
+   :text text})
+
+(defn text-document-position-params
+  "Create TextDocumentPositionParams.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentPositionParams"
+  ([uri line character]
+   {:textDocument (text-document-identifier uri)
+    :position (position line character)})
+  ([uri position]
+   {:textDocument (text-document-identifier uri)
+    :position position}))
+
+;; -----------------------------------------------------------------------------
+;; Text Edit Types
+;; -----------------------------------------------------------------------------
+
+(defn text-edit
+  "Create a TextEdit.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textEdit"
+  [range new-text]
+  {:range range :newText new-text})
+
+(defn annotated-text-edit
+  "Create an AnnotatedTextEdit (TextEdit with change annotation).
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#annotatedTextEdit"
+  [range new-text annotation-id]
+  {:range range :newText new-text :annotationId annotation-id})
+
+(defn text-document-edit
+  "Create a TextDocumentEdit.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentEdit"
+  [text-document edits]
+  {:textDocument text-document :edits edits})
+
+;; -----------------------------------------------------------------------------
+;; Workspace Edit Types
+;; -----------------------------------------------------------------------------
+
+(defn workspace-edit
+  "Create a WorkspaceEdit.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspaceEdit"
+  [{:keys [changes document-changes change-annotations]}]
+  (cond-> {}
+    changes (assoc :changes changes)
+    document-changes (assoc :documentChanges document-changes)
+    change-annotations (assoc :changeAnnotations change-annotations)))
+
+(defn create-file
+  "Create a CreateFile operation.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#createFile"
+  [uri & {:keys [overwrite ignore-if-exists annotation-id]}]
+  (cond-> {:kind "create" :uri uri}
+    (some? overwrite) (assoc-in [:options :overwrite] overwrite)
+    (some? ignore-if-exists) (assoc-in [:options :ignoreIfExists] ignore-if-exists)
+    annotation-id (assoc :annotationId annotation-id)))
+
+(defn rename-file
+  "Create a RenameFile operation.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#renameFile"
+  [old-uri new-uri & {:keys [overwrite ignore-if-exists annotation-id]}]
+  (cond-> {:kind "rename" :oldUri old-uri :newUri new-uri}
+    (some? overwrite) (assoc-in [:options :overwrite] overwrite)
+    (some? ignore-if-exists) (assoc-in [:options :ignoreIfExists] ignore-if-exists)
+    annotation-id (assoc :annotationId annotation-id)))
+
+(defn delete-file
+  "Create a DeleteFile operation.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#deleteFile"
+  [uri & {:keys [recursive ignore-if-not-exists annotation-id]}]
+  (cond-> {:kind "delete" :uri uri}
+    (some? recursive) (assoc-in [:options :recursive] recursive)
+    (some? ignore-if-not-exists) (assoc-in [:options :ignoreIfNotExists] ignore-if-not-exists)
+    annotation-id (assoc :annotationId annotation-id)))
+
+;; -----------------------------------------------------------------------------
+;; Diagnostic Types
+;; -----------------------------------------------------------------------------
+
+(def diagnostic-severity
+  "DiagnosticSeverity enum values.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticSeverity"
+  {:error 1
+   :warning 2
+   :information 3
+   :hint 4})
+
+(def diagnostic-tag
+  "DiagnosticTag enum values.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticTag"
+  {:unnecessary 1
+   :deprecated 2})
+
+(defn diagnostic
+  "Create a Diagnostic.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnostic"
+  [{:keys [range message severity code code-description source tags
+           related-information data]}]
+  (cond-> {:range range :message message}
+    severity (assoc :severity (if (keyword? severity)
+                                (get diagnostic-severity severity)
+                                severity))
+    code (assoc :code code)
+    code-description (assoc :codeDescription code-description)
+    source (assoc :source source)
+    tags (assoc :tags (mapv #(if (keyword? %) (get diagnostic-tag %) %) tags))
+    related-information (assoc :relatedInformation related-information)
+    data (assoc :data data)))
+
+(defn diagnostic-related-information
+  "Create DiagnosticRelatedInformation.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#diagnosticRelatedInformation"
+  [location message]
+  {:location location :message message})
+
+;; -----------------------------------------------------------------------------
+;; Completion Types
+;; -----------------------------------------------------------------------------
+
+(def completion-item-kind
+  "CompletionItemKind enum values.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionItemKind"
+  {:text 1
+   :method 2
+   :function 3
+   :constructor 4
+   :field 5
+   :variable 6
+   :class 7
+   :interface 8
+   :module 9
+   :property 10
+   :unit 11
+   :value 12
+   :enum 13
+   :keyword 14
+   :snippet 15
+   :color 16
+   :file 17
+   :reference 18
+   :folder 19
+   :enum-member 20
+   :constant 21
+   :struct 22
+   :event 23
+   :operator 24
+   :type-parameter 25})
+
+(def insert-text-format
+  "InsertTextFormat enum values."
+  {:plain-text 1
+   :snippet 2})
+
+(defn completion-item
+  "Create a CompletionItem.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionItem"
+  [{:keys [label label-details kind tags detail documentation deprecated
+           preselect sort-text filter-text insert-text insert-text-format
+           insert-text-mode text-edit text-edit-text additional-text-edits
+           commit-characters command data]}]
+  (cond-> {:label label}
+    label-details (assoc :labelDetails label-details)
+    kind (assoc :kind (if (keyword? kind) (get completion-item-kind kind) kind))
+    tags (assoc :tags tags)
+    detail (assoc :detail detail)
+    documentation (assoc :documentation documentation)
+    deprecated (assoc :deprecated deprecated)
+    preselect (assoc :preselect preselect)
+    sort-text (assoc :sortText sort-text)
+    filter-text (assoc :filterText filter-text)
+    insert-text (assoc :insertText insert-text)
+    insert-text-format (assoc :insertTextFormat
+                              (if (keyword? insert-text-format)
+                                (get insert-text-format insert-text-format)
+                                insert-text-format))
+    insert-text-mode (assoc :insertTextMode insert-text-mode)
+    text-edit (assoc :textEdit text-edit)
+    text-edit-text (assoc :textEditText text-edit-text)
+    additional-text-edits (assoc :additionalTextEdits additional-text-edits)
+    commit-characters (assoc :commitCharacters commit-characters)
+    command (assoc :command command)
+    data (assoc :data data)))
+
+(defn completion-list
+  "Create a CompletionList.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#completionList"
+  [items & {:keys [is-incomplete item-defaults]}]
+  (cond-> {:isIncomplete (boolean is-incomplete) :items items}
+    item-defaults (assoc :itemDefaults item-defaults)))
+
+;; -----------------------------------------------------------------------------
+;; Symbol Types
+;; -----------------------------------------------------------------------------
+
+(def symbol-kind
+  "SymbolKind enum values.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolKind"
+  {:file 1
+   :module 2
+   :namespace 3
+   :package 4
+   :class 5
+   :method 6
+   :property 7
+   :field 8
+   :constructor 9
+   :enum 10
+   :interface 11
+   :function 12
+   :variable 13
+   :constant 14
+   :string 15
+   :number 16
+   :boolean 17
+   :array 18
+   :object 19
+   :key 20
+   :null 21
+   :enum-member 22
+   :struct 23
+   :event 24
+   :operator 25
+   :type-parameter 26})
+
+(def symbol-tag
+  "SymbolTag enum values."
+  {:deprecated 1})
+
+(defn document-symbol
+  "Create a DocumentSymbol (hierarchical).
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#documentSymbol"
+  [{:keys [name detail kind tags deprecated range selection-range children]}]
+  (cond-> {:name name
+           :kind (if (keyword? kind) (get symbol-kind kind) kind)
+           :range range
+           :selectionRange selection-range}
+    detail (assoc :detail detail)
+    tags (assoc :tags (mapv #(if (keyword? %) (get symbol-tag %) %) tags))
+    deprecated (assoc :deprecated deprecated)
+    children (assoc :children children)))
+
+(defn symbol-information
+  "Create a SymbolInformation (flat).
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#symbolInformation"
+  [{:keys [name kind tags deprecated location container-name]}]
+  (cond-> {:name name
+           :kind (if (keyword? kind) (get symbol-kind kind) kind)
+           :location location}
+    tags (assoc :tags (mapv #(if (keyword? %) (get symbol-tag %) %) tags))
+    deprecated (assoc :deprecated deprecated)
+    container-name (assoc :containerName container-name)))
+
+(defn workspace-symbol
+  "Create a WorkspaceSymbol.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspaceSymbol"
+  [{:keys [name kind tags container-name location data]}]
+  (cond-> {:name name
+           :kind (if (keyword? kind) (get symbol-kind kind) kind)}
+    tags (assoc :tags tags)
+    container-name (assoc :containerName container-name)
+    location (assoc :location location)
+    data (assoc :data data)))
+
+;; -----------------------------------------------------------------------------
+;; Code Action Types
+;; -----------------------------------------------------------------------------
+
+(def code-action-kind
+  "CodeActionKind constants.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#codeActionKind"
+  {:empty ""
+   :quick-fix "quickfix"
+   :refactor "refactor"
+   :refactor-extract "refactor.extract"
+   :refactor-inline "refactor.inline"
+   :refactor-rewrite "refactor.rewrite"
+   :source "source"
+   :source-organize-imports "source.organizeImports"
+   :source-fix-all "source.fixAll"})
+
+(defn code-action
+  "Create a CodeAction.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#codeAction"
+  [{:keys [title kind diagnostics is-preferred disabled edit command data]}]
+  (cond-> {:title title}
+    kind (assoc :kind (if (keyword? kind) (get code-action-kind kind kind) kind))
+    diagnostics (assoc :diagnostics diagnostics)
+    is-preferred (assoc :isPreferred is-preferred)
+    disabled (assoc :disabled disabled)
+    edit (assoc :edit edit)
+    command (assoc :command command)
+    data (assoc :data data)))
+
+(defn command
+  "Create a Command.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#command"
+  [title command-id & args]
+  (cond-> {:title title :command command-id}
+    (seq args) (assoc :arguments (vec args))))
+
+;; -----------------------------------------------------------------------------
+;; Hover Types
+;; -----------------------------------------------------------------------------
+
+(defn markup-content
+  "Create MarkupContent.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#markupContent"
+  [kind value]
+  {:kind kind :value value})
+
+(defn markdown
+  "Create markdown MarkupContent."
+  [value]
+  (markup-content "markdown" value))
+
+(defn plaintext
+  "Create plaintext MarkupContent."
+  [value]
+  (markup-content "plaintext" value))
+
+(defn hover
+  "Create a Hover response.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#hover"
+  ([contents]
+   {:contents contents})
+  ([contents range]
+   {:contents contents :range range}))
+
+;; -----------------------------------------------------------------------------
+;; Signature Help Types
+;; -----------------------------------------------------------------------------
+
+(defn parameter-information
+  "Create ParameterInformation.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#parameterInformation"
+  [label & {:keys [documentation]}]
+  (cond-> {:label label}
+    documentation (assoc :documentation documentation)))
+
+(defn signature-information
+  "Create SignatureInformation.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#signatureInformation"
+  [label & {:keys [documentation parameters active-parameter]}]
+  (cond-> {:label label}
+    documentation (assoc :documentation documentation)
+    parameters (assoc :parameters parameters)
+    active-parameter (assoc :activeParameter active-parameter)))
+
+(defn signature-help
+  "Create SignatureHelp.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#signatureHelp"
+  [signatures & {:keys [active-signature active-parameter]}]
+  (cond-> {:signatures signatures}
+    active-signature (assoc :activeSignature active-signature)
+    active-parameter (assoc :activeParameter active-parameter)))
+
+;; -----------------------------------------------------------------------------
+;; Call Hierarchy Types
+;; -----------------------------------------------------------------------------
+
+(defn call-hierarchy-item
+  "Create a CallHierarchyItem.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#callHierarchyItem"
+  [{:keys [name kind tags detail uri range selection-range data]}]
+  (cond-> {:name name
+           :kind (if (keyword? kind) (get symbol-kind kind) kind)
+           :uri uri
+           :range range
+           :selectionRange selection-range}
+    tags (assoc :tags tags)
+    detail (assoc :detail detail)
+    data (assoc :data data)))
+
+(defn call-hierarchy-incoming-call
+  "Create a CallHierarchyIncomingCall.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#callHierarchyIncomingCall"
+  [from from-ranges]
+  {:from from :fromRanges from-ranges})
+
+(defn call-hierarchy-outgoing-call
+  "Create a CallHierarchyOutgoingCall.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#callHierarchyOutgoingCall"
+  [to from-ranges]
+  {:to to :fromRanges from-ranges})
+
+;; -----------------------------------------------------------------------------
+;; Semantic Tokens Types
+;; -----------------------------------------------------------------------------
+
+(def semantic-token-types
+  "Standard semantic token types.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#semanticTokenTypes"
+  ["namespace" "type" "class" "enum" "interface" "struct" "typeParameter"
+   "parameter" "variable" "property" "enumMember" "event" "function"
+   "method" "macro" "keyword" "modifier" "comment" "string" "number"
+   "regexp" "operator" "decorator"])
+
+(def semantic-token-modifiers
+  "Standard semantic token modifiers.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#semanticTokenModifiers"
+  ["declaration" "definition" "readonly" "static" "deprecated" "abstract"
+   "async" "modification" "documentation" "defaultLibrary"])
+
+(defn semantic-tokens-legend
+  "Create a SemanticTokensLegend."
+  [& {:keys [token-types token-modifiers]}]
+  {:tokenTypes (or token-types semantic-token-types)
+   :tokenModifiers (or token-modifiers semantic-token-modifiers)})
+
+;; =============================================================================
+;; Section 2: LSP Error Codes
+;; =============================================================================
+
+(def error-codes
+  "LSP and JSON-RPC error codes.
+   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#errorCodes"
+  {;; JSON-RPC standard errors
+   :parse-error -32700
+   :invalid-request -32600
+   :method-not-found -32601
+   :invalid-params -32602
+   :internal-error -32603
+
+   ;; LSP reserved errors
+   :server-not-initialized -32002
+   :unknown-error-code -32001
+
+   ;; LSP request errors
+   :request-failed -32803
+   :server-cancelled -32802
+   :content-modified -32801
+   :request-cancelled -32800})
+
+(defn error-response
+  "Create a JSON-RPC error response."
+  [code message & {:keys [data]}]
+  (cond-> {:code (if (keyword? code) (get error-codes code code) code)
+           :message message}
+    data (assoc :data data)))
+
+;; =============================================================================
+;; Section 3: LSP Methods
+;; =============================================================================
+;; All LSP 3.17 method names as constants, organized by category.
+
+(def methods
+  "All LSP 3.17 method names organized by category."
+  {;; Lifecycle
+   :lifecycle
+   {:initialize "initialize"
+    :initialized "initialized"
+    :shutdown "shutdown"
+    :exit "exit"
+    :set-trace "$/setTrace"
+    :log-trace "$/logTrace"
+    :cancel-request "$/cancelRequest"
+    :progress "$/progress"}
+
+   ;; Window
+   :window
+   {:show-message "window/showMessage"
+    :show-message-request "window/showMessageRequest"
+    :show-document "window/showDocument"
+    :log-message "window/logMessage"
+    :work-done-progress-create "window/workDoneProgress/create"
+    :work-done-progress-cancel "window/workDoneProgress/cancel"}
+
+   ;; Telemetry
+   :telemetry
+   {:event "telemetry/event"}
+
+   ;; Client
+   :client
+   {:register-capability "client/registerCapability"
+    :unregister-capability "client/unregisterCapability"}
+
+   ;; Workspace
+   :workspace
+   {:workspace-folders "workspace/workspaceFolders"
+    :did-change-workspace-folders "workspace/didChangeWorkspaceFolders"
+    :configuration "workspace/configuration"
+    :did-change-configuration "workspace/didChangeConfiguration"
+    :did-change-watched-files "workspace/didChangeWatchedFiles"
+    :symbol "workspace/symbol"
+    :symbol-resolve "workspaceSymbol/resolve"
+    :execute-command "workspace/executeCommand"
+    :apply-edit "workspace/applyEdit"
+    :will-create-files "workspace/willCreateFiles"
+    :did-create-files "workspace/didCreateFiles"
+    :will-rename-files "workspace/willRenameFiles"
+    :did-rename-files "workspace/didRenameFiles"
+    :will-delete-files "workspace/willDeleteFiles"
+    :did-delete-files "workspace/didDeleteFiles"}
+
+   ;; Text Document Synchronization
+   :text-sync
+   {:did-open "textDocument/didOpen"
+    :did-change "textDocument/didChange"
+    :will-save "textDocument/willSave"
+    :will-save-wait-until "textDocument/willSaveWaitUntil"
+    :did-save "textDocument/didSave"
+    :did-close "textDocument/didClose"}
+
+   ;; Language Features
+   :language
+   {:completion "textDocument/completion"
+    :completion-resolve "completionItem/resolve"
+    :hover "textDocument/hover"
+    :signature-help "textDocument/signatureHelp"
+    :declaration "textDocument/declaration"
+    :definition "textDocument/definition"
+    :type-definition "textDocument/typeDefinition"
+    :implementation "textDocument/implementation"
+    :references "textDocument/references"
+    :document-highlight "textDocument/documentHighlight"
+    :document-symbol "textDocument/documentSymbol"
+    :code-action "textDocument/codeAction"
+    :code-action-resolve "codeAction/resolve"
+    :code-lens "textDocument/codeLens"
+    :code-lens-resolve "codeLens/resolve"
+    :code-lens-refresh "workspace/codeLens/refresh"
+    :document-link "textDocument/documentLink"
+    :document-link-resolve "documentLink/resolve"
+    :document-color "textDocument/documentColor"
+    :color-presentation "textDocument/colorPresentation"
+    :formatting "textDocument/formatting"
+    :range-formatting "textDocument/rangeFormatting"
+    :on-type-formatting "textDocument/onTypeFormatting"
+    :rename "textDocument/rename"
+    :prepare-rename "textDocument/prepareRename"
+    :folding-range "textDocument/foldingRange"
+    :selection-range "textDocument/selectionRange"
+    :prepare-call-hierarchy "textDocument/prepareCallHierarchy"
+    :call-hierarchy-incoming "callHierarchy/incomingCalls"
+    :call-hierarchy-outgoing "callHierarchy/outgoingCalls"
+    :prepare-type-hierarchy "textDocument/prepareTypeHierarchy"
+    :type-hierarchy-supertypes "typeHierarchy/supertypes"
+    :type-hierarchy-subtypes "typeHierarchy/subtypes"
+    :document-semantic-tokens-full "textDocument/semanticTokens/full"
+    :document-semantic-tokens-full-delta "textDocument/semanticTokens/full/delta"
+    :document-semantic-tokens-range "textDocument/semanticTokens/range"
+    :semantic-tokens-refresh "workspace/semanticTokens/refresh"
+    :linked-editing-range "textDocument/linkedEditingRange"
+    :moniker "textDocument/moniker"
+    :inlay-hint "textDocument/inlayHint"
+    :inlay-hint-resolve "inlayHint/resolve"
+    :inlay-hint-refresh "workspace/inlayHint/refresh"
+    :inline-value "textDocument/inlineValue"
+    :inline-value-refresh "workspace/inlineValue/refresh"
+    :diagnostic "textDocument/diagnostic"
+    :workspace-diagnostic "workspace/diagnostic"
+    :diagnostic-refresh "workspace/diagnostic/refresh"}
+
+   ;; Notebook Document (LSP 3.17)
+   :notebook
+   {:did-open "notebookDocument/didOpen"
+    :did-change "notebookDocument/didChange"
+    :did-save "notebookDocument/didSave"
+    :did-close "notebookDocument/didClose"}})
+
+(defn method-name
+  "Get the LSP method string for a category and method keyword.
+   Example: (method-name :language :definition) => \"textDocument/definition\""
+  [category method-key]
+  (get-in methods [category method-key]))
+
+;; Convenience aliases for common methods
+(def m:initialize (method-name :lifecycle :initialize))
+(def m:initialized (method-name :lifecycle :initialized))
+(def m:shutdown (method-name :lifecycle :shutdown))
+(def m:exit (method-name :lifecycle :exit))
+(def m:did-open (method-name :text-sync :did-open))
+(def m:did-change (method-name :text-sync :did-change))
+(def m:did-save (method-name :text-sync :did-save))
+(def m:did-close (method-name :text-sync :did-close))
+(def m:completion (method-name :language :completion))
+(def m:hover (method-name :language :hover))
+(def m:definition (method-name :language :definition))
+(def m:references (method-name :language :references))
+(def m:document-symbol (method-name :language :document-symbol))
+(def m:workspace-symbol (method-name :workspace :symbol))
+(def m:code-action (method-name :language :code-action))
+(def m:formatting (method-name :language :formatting))
+(def m:rename (method-name :language :rename))
+
+;; =============================================================================
+;; Section 4: Capabilities
+;; =============================================================================
+;; Builders for ServerCapabilities and ClientCapabilities
+
+(def text-document-sync-kind
+  "TextDocumentSyncKind enum values."
+  {:none 0
+   :full 1
+   :incremental 2})
+
+(defn text-document-sync-options
+  "Create TextDocumentSyncOptions."
+  [& {:keys [open-close change will-save will-save-wait-until save]}]
+  (cond-> {}
+    (some? open-close) (assoc :openClose open-close)
+    change (assoc :change (if (keyword? change)
+                            (get text-document-sync-kind change)
+                            change))
+    (some? will-save) (assoc :willSave will-save)
+    (some? will-save-wait-until) (assoc :willSaveWaitUntil will-save-wait-until)
+    save (assoc :save (if (boolean? save)
+                        save
+                        {:includeText (:include-text save false)}))))
+
+(defn completion-options
+  "Create CompletionOptions."
+  [& {:keys [trigger-characters all-commit-characters resolve-provider
+             work-done-progress]}]
+  (cond-> {}
+    trigger-characters (assoc :triggerCharacters trigger-characters)
+    all-commit-characters (assoc :allCommitCharacters all-commit-characters)
+    (some? resolve-provider) (assoc :resolveProvider resolve-provider)
+    (some? work-done-progress) (assoc :workDoneProgress work-done-progress)))
+
+(defn signature-help-options
+  "Create SignatureHelpOptions."
+  [& {:keys [trigger-characters retrigger-characters work-done-progress]}]
+  (cond-> {}
+    trigger-characters (assoc :triggerCharacters trigger-characters)
+    retrigger-characters (assoc :retriggerCharacters retrigger-characters)
+    (some? work-done-progress) (assoc :workDoneProgress work-done-progress)))
+
+(defn code-action-options
+  "Create CodeActionOptions."
+  [& {:keys [code-action-kinds resolve-provider work-done-progress]}]
+  (cond-> {}
+    code-action-kinds (assoc :codeActionKinds
+                             (mapv #(if (keyword? %)
+                                      (get code-action-kind % %)
+                                      %)
+                                   code-action-kinds))
+    (some? resolve-provider) (assoc :resolveProvider resolve-provider)
+    (some? work-done-progress) (assoc :workDoneProgress work-done-progress)))
+
+(defn rename-options
+  "Create RenameOptions."
+  [& {:keys [prepare-provider work-done-progress]}]
+  (cond-> {}
+    (some? prepare-provider) (assoc :prepareProvider prepare-provider)
+    (some? work-done-progress) (assoc :workDoneProgress work-done-progress)))
+
+(defn semantic-tokens-options
+  "Create SemanticTokensOptions."
+  [legend & {:keys [range full work-done-progress]}]
+  (cond-> {:legend legend}
+    (some? range) (assoc :range range)
+    full (assoc :full full)
+    (some? work-done-progress) (assoc :workDoneProgress work-done-progress)))
+
+(defn server-capabilities
+  "Build ServerCapabilities.
+   Pass capability options or true/false for simple capabilities.
+
+   Example:
+   (server-capabilities
+     :text-document-sync (text-document-sync-options :open-close true :change :incremental)
+     :hover true
+     :completion (completion-options :trigger-characters [\".\"])
+     :definition true
+     :references true)"
+  [& {:keys [text-document-sync completion hover signature-help declaration
+             definition type-definition implementation references
+             document-highlight document-symbol code-action code-lens
+             document-link color-provider document-formatting
+             document-range-formatting document-on-type-formatting
+             rename folding-range selection-range execute-command
+             workspace-symbol workspace call-hierarchy semantic-tokens
+             moniker linked-editing-range type-hierarchy inline-value
+             inlay-hint diagnostic position-encoding general]
+      :as opts}]
+  (let [->opt (fn [v]
+                (cond
+                  (nil? v) nil
+                  (false? v) nil
+                  (true? v) {}
+                  :else v))]
+    (cond-> {}
+      text-document-sync (assoc :textDocumentSync text-document-sync)
+      (->opt completion) (assoc :completionProvider (->opt completion))
+      (->opt hover) (assoc :hoverProvider (->opt hover))
+      (->opt signature-help) (assoc :signatureHelpProvider (->opt signature-help))
+      (->opt declaration) (assoc :declarationProvider (->opt declaration))
+      (->opt definition) (assoc :definitionProvider (->opt definition))
+      (->opt type-definition) (assoc :typeDefinitionProvider (->opt type-definition))
+      (->opt implementation) (assoc :implementationProvider (->opt implementation))
+      (->opt references) (assoc :referencesProvider (->opt references))
+      (->opt document-highlight) (assoc :documentHighlightProvider (->opt document-highlight))
+      (->opt document-symbol) (assoc :documentSymbolProvider (->opt document-symbol))
+      (->opt code-action) (assoc :codeActionProvider (->opt code-action))
+      (->opt code-lens) (assoc :codeLensProvider (->opt code-lens))
+      (->opt document-link) (assoc :documentLinkProvider (->opt document-link))
+      (->opt color-provider) (assoc :colorProvider (->opt color-provider))
+      (->opt document-formatting) (assoc :documentFormattingProvider (->opt document-formatting))
+      (->opt document-range-formatting) (assoc :documentRangeFormattingProvider (->opt document-range-formatting))
+      (->opt document-on-type-formatting) (assoc :documentOnTypeFormattingProvider (->opt document-on-type-formatting))
+      (->opt rename) (assoc :renameProvider (->opt rename))
+      (->opt folding-range) (assoc :foldingRangeProvider (->opt folding-range))
+      (->opt selection-range) (assoc :selectionRangeProvider (->opt selection-range))
+      (->opt execute-command) (assoc :executeCommandProvider (->opt execute-command))
+      (->opt workspace-symbol) (assoc :workspaceSymbolProvider (->opt workspace-symbol))
+      workspace (assoc :workspace workspace)
+      (->opt call-hierarchy) (assoc :callHierarchyProvider (->opt call-hierarchy))
+      (->opt semantic-tokens) (assoc :semanticTokensProvider (->opt semantic-tokens))
+      (->opt moniker) (assoc :monikerProvider (->opt moniker))
+      (->opt linked-editing-range) (assoc :linkedEditingRangeProvider (->opt linked-editing-range))
+      (->opt type-hierarchy) (assoc :typeHierarchyProvider (->opt type-hierarchy))
+      (->opt inline-value) (assoc :inlineValueProvider (->opt inline-value))
+      (->opt inlay-hint) (assoc :inlayHintProvider (->opt inlay-hint))
+      (->opt diagnostic) (assoc :diagnosticProvider (->opt diagnostic))
+      position-encoding (assoc :positionEncoding position-encoding)
+      general (assoc :general general))))
+
+(defn client-capabilities
+  "Build ClientCapabilities for connecting to LSP servers.
+   Returns a minimal but functional set of client capabilities."
+  [& {:keys [workspace text-document window general experimental]}]
+  (cond-> {}
+    workspace (assoc :workspace workspace)
+    text-document (assoc :textDocument text-document)
+    window (assoc :window window)
+    general (assoc :general general)
+    experimental (assoc :experimental experimental)))
+
+(def default-client-capabilities
+  "Minimal client capabilities for basic LSP client functionality."
+  (client-capabilities
+   :text-document
+   {:synchronization {:dynamicRegistration false
+                      :willSave false
+                      :willSaveWaitUntil false
+                      :didSave true}
+    :completion {:dynamicRegistration false
+                 :completionItem {:snippetSupport false
+                                  :deprecatedSupport true
+                                  :preselectSupport true}}
+    :hover {:dynamicRegistration false
+            :contentFormat ["markdown" "plaintext"]}
+    :signatureHelp {:dynamicRegistration false}
+    :definition {:dynamicRegistration false}
+    :references {:dynamicRegistration false}
+    :documentSymbol {:dynamicRegistration false}
+    :codeAction {:dynamicRegistration false}
+    :rename {:dynamicRegistration false
+             :prepareSupport true}}
+   :workspace
+   {:workspaceFolders false
+    :symbol {:dynamicRegistration false}}))
+
+;; =============================================================================
+;; Section 5: JSON-RPC Messages
+;; =============================================================================
+
+(defn request-message
+  "Create a JSON-RPC request message."
+  [id method params]
+  (cond-> {:jsonrpc "2.0" :id id :method method}
+    params (assoc :params params)))
+
+(defn response-message
+  "Create a JSON-RPC response message."
+  ([id result]
+   {:jsonrpc "2.0" :id id :result result})
+  ([id result error]
+   (if error
+     {:jsonrpc "2.0" :id id :error error}
+     {:jsonrpc "2.0" :id id :result result})))
+
+(defn notification-message
+  "Create a JSON-RPC notification message (no id, no response expected)."
+  [method params]
+  (cond-> {:jsonrpc "2.0" :method method}
+    params (assoc :params params)))
+
+(defn encode-lsp-message
+  "Encode message with LSP Content-Length header."
+  [msg]
+  (let [json-str (platform/json-encode msg)
+        byte-length (platform/utf8-byte-length json-str)]
+    (str "Content-Length: " byte-length "\r\n\r\n" json-str)))
+
+(defn parse-lsp-headers
+  "Parse LSP message headers into a map."
+  [header-str]
+  (into {}
+        (for [line (clojure.string/split-lines header-str)
+              :let [[_ k v] (re-matches #"([^:]+):\s*(.+)" line)]
+              :when k]
+          [(clojure.string/lower-case k) (clojure.string/trim v)])))
+
+;; read-lsp-message and write-lsp-message (JVM-only BufferedReader/Writer
+;; framing implementations) live in defport.lsp-client.
+
+;; =============================================================================
+;; Section 6: URI Utilities
+;; =============================================================================
+
+(defn file->uri
+  "Convert file path to file:// URI."
+  [path]
+  (when path
+    (let [normalized (-> path
+                         (str/replace "\\" "/")
+                         (str/replace #"^/" ""))]
+      ;; URLEncoder encodes / as %2F, restore them after encoding
+      (str "file:///" (str/replace (platform/url-encode normalized)
+                                   "%2F" "/")))))
+
+(defn uri->file
+  "Convert file:// URI to file path."
+  [uri]
+  (when uri
+    (platform/url-decode
+     (-> uri
+         (clojure.string/replace #"^file:///" "")
+         (clojure.string/replace #"^file://" "")))))
+
+;; =============================================================================
+;; Section 7: Method Registry
+;; =============================================================================
+;; Allows applications to register handlers for LSP methods.
+
+(defprotocol MethodRegistry
+  "Registry for LSP method handlers."
+  (register-method [this method handler]
+    "Register a handler function for an LSP method.
+     Handler signature: (fn [params context] result)")
+  (unregister-method [this method]
+    "Remove handler for an LSP method.")
+  (get-handler [this method]
+    "Get registered handler for a method.")
+  (list-methods [this]
+    "List all registered methods."))
+
+(defrecord AtomMethodRegistry [handlers*]
+  MethodRegistry
+  (register-method [_ method handler]
+    (swap! handlers* assoc method handler))
+  (unregister-method [_ method]
+    (swap! handlers* dissoc method))
+  (get-handler [_ method]
+    (get @handlers* method))
+  (list-methods [_]
+    (keys @handlers*)))
+
+(defn create-method-registry
+  "Create a new method registry."
+  []
+  (->AtomMethodRegistry (atom {})))
+
+;; =============================================================================
+;; Section 8: Document Store
+;; =============================================================================
+;; Stateful document synchronization for LSP server mode.
+
+(defprotocol DocumentStore
+  "Manages synchronized document state."
+  (doc-open [this uri content version language-id]
+    "Track a newly opened document.")
+  (doc-change [this uri changes version]
+    "Apply changes to document.")
+  (doc-close [this uri]
+    "Stop tracking document.")
+  (doc-get [this uri]
+    "Get document by URI.")
+  (doc-list [this]
+    "List all tracked document URIs."))
+
+(defn apply-text-edit
+  "Apply a single TextEdit to content string."
+  [content {:keys [range text newText]}]
+  (let [new-text (or newText text "")
+        {:keys [start end]} range]
+    (if (and start end)
+      (let [lines (vec (clojure.string/split content #"\n" -1))
+            start-line (:line start)
+            start-char (:character start)
+            end-line (:line end)
+            end-char (:character end)]
+        (if (and (< start-line (count lines))
+                 (<= end-line (count lines)))
+          (let [before-text (subs (get lines start-line "")
+                                  0 (min start-char (count (get lines start-line ""))))
+                after-text (subs (get lines end-line "")
+                                 (min end-char (count (get lines end-line ""))))
+                new-content-lines (clojure.string/split new-text #"\n" -1)
+                result-lines (vec (concat
+                                   (take start-line lines)
+                                   [(str before-text (first new-content-lines))]
+                                   (rest (butlast new-content-lines))
+                                   (when (> (count new-content-lines) 1)
+                                     [(str (last new-content-lines) after-text)])
+                                   (when (<= (count new-content-lines) 1)
+                                     [(str (first new-content-lines) after-text)])
+                                   (drop (inc end-line) lines)))]
+            (clojure.string/join "\n" (take (+ (count lines)
+                                               (- (count new-content-lines) 1)
+                                               (- start-line end-line))
+                                            result-lines)))
+          content))
+      ;; Full document replacement
+      new-text)))
+
+(defn apply-content-changes
+  "Apply a sequence of content changes to document."
+  [content changes]
+  (reduce
+   (fn [c change]
+     (if (:range change)
+       (apply-text-edit c change)
+       ;; Full sync
+       (or (:text change) c)))
+   content
+   changes))
+
+(defrecord InMemoryDocumentStore [documents*]
+  DocumentStore
+  (doc-open [_ uri content version language-id]
+    (swap! documents* assoc uri
+           {:uri uri
+            :content content
+            :version version
+            :languageId language-id
+            :openedAt (platform/now-ms)}))
+
+  (doc-change [_ uri changes version]
+    (swap! documents* update uri
+           (fn [doc]
+             (when doc
+               (-> doc
+                   (assoc :version version)
+                   (update :content apply-content-changes changes))))))
+
+  (doc-close [_ uri]
+    (swap! documents* dissoc uri))
+
+  (doc-get [_ uri]
+    (get @documents* uri))
+
+  (doc-list [_]
+    (keys @documents*)))
+
+(defn create-document-store
+  "Create an in-memory document store."
+  []
+  (->InMemoryDocumentStore (atom {})))
+
+;; =============================================================================
+;; Section 9: LSP Adapter (ProtocolAdapter implementation)
+;; =============================================================================
+;;
+;; State is a single atom holding an immutable map — same pattern MCP uses.
+;; All mutations go through swap! for consistent snapshots.
+
+(declare capabilities-from-registry)
+
+(def ^:private empty-lsp-state
+  "The shape of a fresh LSP protocol state."
+  {:initialized          false
+   :shutting-down        false
+   :root-uri             nil
+   :active-operations    #{}     ;; LSP request IDs still in flight
+   :cancelled-operations #{}     ;; LSP request IDs that received $/cancelRequest
+   :progress-tokens      {}      ;; {token {:kind :work-done :started-at ms}}
+   :client-capabilities  nil})
+
+(defn create-protocol-state
+  "Create a fresh LSP protocol state atom.
+
+   Each LspAdapter owns one. Returns a single atom holding an immutable map.
+   All mutations go through swap! on this one atom — mirrors MCP's pattern."
+  []
+  (atom empty-lsp-state))
+
+(defn reset-protocol-state!
+  "Reset an LSP protocol state atom to its empty shape."
+  [state*]
+  (reset! state* empty-lsp-state))
+
+(defn adapter-state
+  "Get the protocol state atom from an LSP adapter. Useful for tests
+   and introspection."
+  [adapter]
+  (:state* adapter))
+
+;; ----- Cancellation ---------------------------------------------------------
+
+(defn register-operation
+  "Record an LSP request as in-flight so $/cancelRequest can target it.
+   Returns the request-id for chaining."
+  [state* request-id]
+  (when request-id
+    (swap! state* update :active-operations conj request-id))
+  request-id)
+
+(defn cancel-operation
+  "Mark an LSP request as cancelled. Handlers observing cancellation
+   via `cancelled?` can short-circuit their work."
+  [state* request-id]
+  (when request-id
+    (swap! state* update :cancelled-operations conj request-id)))
+
+(defn cancelled?
+  "Check whether an LSP request-id has been cancelled."
+  [state* request-id]
+  (contains? (:cancelled-operations @state*) request-id))
+
+(defn unregister-operation
+  "Drop a request-id from both active and cancelled sets once its
+   handler has returned."
+  [state* request-id]
+  (when request-id
+    (swap! state* (fn [s]
+                    (-> s
+                        (update :active-operations disj request-id)
+                        (update :cancelled-operations disj request-id))))))
+
+;; ----- Progress -------------------------------------------------------------
+
+(defn register-progress-token
+  "Track a work-done progress token the client handed us in a request."
+  [state* token]
+  (when token
+    (swap! state* assoc-in [:progress-tokens token]
+           {:kind :work-done
+            :started-at (platform/now-ms)}))
+  token)
+
+(defn unregister-progress-token
+  "Drop a progress token once its work has ended."
+  [state* token]
+  (when token
+    (swap! state* update :progress-tokens dissoc token)))
+
+(defn progress-token-active?
+  "Check whether we've registered a progress token for this request."
+  [state* token]
+  (contains? (:progress-tokens @state*) token))
+
+;; ----- Adapter --------------------------------------------------------------
+
+(defrecord LspAdapter [server-info
+                       capabilities
+                       method-registry
+                       document-store
+                       state*]
+  core/ProtocolAdapter
+  (protocol-id [_] :lsp)
+
+  (protocol-version [_] protocol-version)
+
+  (protocol-capabilities [_ port-registry]
+    (if port-registry
+      (merge (capabilities-from-registry port-registry) capabilities)
+      capabilities))
+
+  (protocol-dispatch [this method params context]
+    (cond
+      ;; Notifications: $/cancelRequest — flip a flag, return nothing.
+      (= method "$/cancelRequest")
+      (let [id (or (:id params) (get params "id"))]
+        (cancel-operation state* id)
+        (tap> {:event :lsp/cancel-request :id id})
+        nil)
+
+      ;; Notifications: $/progress — opaque passthrough to observers.
+      (= method "$/progress")
+      (do
+        (tap> {:event :lsp/progress :params params})
+        nil)
+
+      :else
+      (let [handler  (get-handler method-registry method)
+            request-id (or (:id context) (get params :id))
+            progress-token (or (:workDoneToken params)
+                               (get-in params [:partialResultToken]))
+            ctx (assoc context
+                       :adapter this
+                       :document-store document-store
+                       :state* state*
+                       :request-id request-id
+                       :progress-token progress-token)]
+        (if handler
+          (platform/try-any
+            (do
+              (register-operation state* request-id)
+              (when progress-token (register-progress-token state* progress-token))
+              (let [result (handler params ctx)]
+                (tap> {:event :lsp/method-handled :method method})
+                result))
+            (catch-any e
+              (tap> {:event :lsp/method-error :method method
+                     :error (platform/error-message e)})
+              (error-response :internal-error
+                              (platform/error-message e)))
+            (finally
+              (unregister-operation state* request-id)
+              (when progress-token
+                (unregister-progress-token state* progress-token))))
+          (do
+            (tap> {:event :lsp/method-not-found :method method})
+            (error-response :method-not-found
+                            (str "Method not implemented: " method))))))))
+
+(defn create-adapter
+  "Create an LSP adapter.
+
+   Options:
+     :server-info  - {:name \"my-server\" :version \"1.0.0\"}
+     :capabilities - ServerCapabilities map (use server-capabilities fn)
+     :methods      - Map of method -> handler fn to pre-register
+
+   Example:
+   (create-adapter
+     {:server-info {:name \"my-lsp\" :version \"0.1.0\"}
+      :capabilities (server-capabilities
+                      :text-document-sync (text-document-sync-options
+                                            :open-close true
+                                            :change :incremental)
+                      :hover true
+                      :definition true)
+      :methods {\"textDocument/hover\" my-hover-handler}})"
+  [{:keys [server-info capabilities methods]}]
+  (let [registry (create-method-registry)
+        doc-store (create-document-store)
+        state* (create-protocol-state)]
+
+    ;; Register provided methods
+    (doseq [[method handler] methods]
+      (register-method registry method handler))
+
+    (->LspAdapter
+     (or server-info {:name "defport-lsp" :version "0.1.0"})
+     (or capabilities (server-capabilities))
+     registry
+     doc-store
+     state*)))
+
+(defn register-method!
+  "Register a method handler on an adapter.
+
+   Handler signature: (fn [params context] result)
+
+   Context contains:
+     :adapter        - The LspAdapter
+     :document-store - DocumentStore for accessing open documents
+     :port-registry  - Port registry (if provided at dispatch time)
+
+   Example:
+   (register-method! adapter \"textDocument/hover\"
+     (fn [{:keys [textDocument position]} ctx]
+       (let [doc (doc-get (:document-store ctx) (:uri textDocument))]
+         (hover (markdown \"Hello!\")))))"
+  [^LspAdapter adapter method handler]
+  (register-method (:method-registry adapter) method handler))
+
+;; =============================================================================
+;; Section 10: Default Handlers
+;; =============================================================================
+;; Optional default implementations for common LSP methods.
+;; Applications can use these or provide their own.
+
+(defn default-initialize-handler
+  "Default initialize handler. Returns server capabilities, including
+   any providers auto-derived from ports in the context's port-registry."
+  [adapter]
+  (fn [params context]
+    (let [{:keys [rootUri capabilities]} params]
+      (tap> {:event :lsp/initialize :root-uri rootUri
+             :client-capabilities capabilities})
+      (swap! (:state* adapter) assoc
+             :initialized true
+             :root-uri rootUri
+             :client-capabilities capabilities)
+      {:capabilities (core/protocol-capabilities adapter
+                                                 (:port-registry context))
+       :serverInfo (:server-info adapter)})))
+
+(defn default-initialized-handler
+  "Default initialized notification handler."
+  [_adapter]
+  (fn [_params _context]
+    (tap> {:event :lsp/initialized})
+    nil))
+
+(defn default-shutdown-handler
+  "Default shutdown handler."
+  [adapter]
+  (fn [_params _context]
+    (tap> {:event :lsp/shutdown})
+    (swap! (:state* adapter) assoc :shutting-down true)
+    nil))
+
+(defn default-exit-handler
+  "Default exit notification handler."
+  [_adapter]
+  (fn [_params _context]
+    (tap> {:event :lsp/exit})
+    nil))
+
+(defn default-did-open-handler
+  "Default textDocument/didOpen handler."
+  [_adapter]
+  (fn [params context]
+    (let [{:keys [textDocument]} params
+          {:keys [uri languageId version text]} textDocument
+          doc-store (:document-store context)]
+      (doc-open doc-store uri text version languageId)
+      (tap> {:event :lsp/did-open :uri uri})
+      nil)))
+
+(defn default-did-change-handler
+  "Default textDocument/didChange handler."
+  [_adapter]
+  (fn [params context]
+    (let [{:keys [textDocument contentChanges]} params
+          {:keys [uri version]} textDocument
+          doc-store (:document-store context)]
+      (doc-change doc-store uri contentChanges version)
+      nil)))
+
+(defn default-did-save-handler
+  "Default textDocument/didSave handler.
+
+   LSP sends didSave as a notification after the document was saved.
+   If the server declared `save: {includeText: true}` in its
+   textDocumentSync capabilities, the client also ships the new text
+   and we sync it into the document store. Otherwise it's a pure
+   metadata event — we just tap> and return."
+  [_adapter]
+  (fn [params context]
+    (let [{:keys [textDocument text]} params
+          uri (:uri textDocument)
+          doc-store (:document-store context)]
+      (when (and text doc-store)
+        (doc-change doc-store uri [{:text text}] (:version textDocument)))
+      (tap> {:event :lsp/did-save :uri uri :include-text? (some? text)})
+      nil)))
+
+(defn default-did-close-handler
+  "Default textDocument/didClose handler."
+  [_adapter]
+  (fn [params context]
+    (let [uri (get-in params [:textDocument :uri])
+          doc-store (:document-store context)]
+      (doc-close doc-store uri)
+      (tap> {:event :lsp/did-close :uri uri})
+      nil)))
+
+(defn register-lifecycle-handlers!
+  "Register default lifecycle handlers on adapter."
+  [adapter]
+  (doto adapter
+    (register-method! m:initialize (default-initialize-handler adapter))
+    (register-method! m:initialized (default-initialized-handler adapter))
+    (register-method! m:shutdown (default-shutdown-handler adapter))
+    (register-method! m:exit (default-exit-handler adapter))))
+
+(defn register-document-sync-handlers!
+  "Register default document sync handlers on adapter."
+  [adapter]
+  (doto adapter
+    (register-method! m:did-open (default-did-open-handler adapter))
+    (register-method! m:did-change (default-did-change-handler adapter))
+    (register-method! m:did-save (default-did-save-handler adapter))
+    (register-method! m:did-close (default-did-close-handler adapter))))
+
+(defn register-default-handlers!
+  "Register all default handlers (lifecycle + document sync)."
+  [adapter]
+  (doto adapter
+    (register-lifecycle-handlers!)
+    (register-document-sync-handlers!)))
+
+;; =============================================================================
+;; Section 11: LSP Client
+;; =============================================================================
+;; For connecting to external LSP servers.
+
+(defprotocol LspClient
+  "Client for communicating with external LSP servers."
+  (client-start [this]
+    "Start the client connection.")
+  (client-request [this method params]
+    "Send request, block for response.")
+  (client-request-async [this method params callback]
+    "Send request, invoke callback with response.")
+  (client-notify [this method params]
+    "Send notification (no response).")
+  (client-stop [this]
+    "Stop the client connection.")
+  (client-alive? [this]
+    "Check if client is connected."))
+
+;; StdioLspClient, start-client-reader-thread, and create-client
+;; (JVM-only subprocess LSP client implementation) live in
+;; defport.lsp-client.
+
+;; =============================================================================
+;; Section 12: Convenience Client API
+;; =============================================================================
+;; High-level functions for common LSP operations.
+
+(defn initialize
+  "Initialize LSP connection.
+   Returns InitializeResult with server capabilities."
+  [client root-uri & {:keys [capabilities]}]
+  (let [response (client-request client m:initialize
+                  {:processId (platform/process-id)
+                   :rootUri root-uri
+                   :capabilities (or capabilities default-client-capabilities)})]
+    (when-not (:error response)
+      (client-notify client m:initialized {})
+      (:result response))))
+
+(defn shutdown
+  "Shutdown LSP connection gracefully."
+  [client]
+  (client-request client m:shutdown nil)
+  (client-notify client m:exit nil))
+
+(defn hover-at
+  "Get hover information at position."
+  [client uri line character]
+  (let [response (client-request client m:hover
+                  (text-document-position-params uri line character))]
+    (:result response)))
+
+(defn definition-at
+  "Get definition location(s) for symbol at position."
+  [client uri line character]
+  (let [response (client-request client m:definition
+                  (text-document-position-params uri line character))]
+    (:result response)))
+
+(defn references-at
+  "Get all references to symbol at position."
+  [client uri line character & {:keys [include-declaration]
+                                :or {include-declaration true}}]
+  (let [response (client-request client m:references
+                  (assoc (text-document-position-params uri line character)
+                         :context {:includeDeclaration include-declaration}))]
+    (:result response)))
+
+(defn complete-at
+  "Get completions at position."
+  [client uri line character]
+  (let [response (client-request client m:completion
+                  (text-document-position-params uri line character))]
+    (:result response)))
+
+(defn symbols-in-document
+  "Get all symbols in document."
+  [client uri]
+  (let [response (client-request client (method-name :language :document-symbol)
+                  {:textDocument (text-document-identifier uri)})]
+    (:result response)))
+
+(defn symbols-in-workspace
+  "Search for symbols in workspace."
+  [client query]
+  (let [response (client-request client m:workspace-symbol
+                  {:query query})]
+    (:result response)))
+
+(defn format-document
+  "Format entire document."
+  [client uri & {:keys [tab-size insert-spaces]
+                 :or {tab-size 2 insert-spaces true}}]
+  (let [response (client-request client m:formatting
+                  {:textDocument (text-document-identifier uri)
+                   :options {:tabSize tab-size
+                             :insertSpaces insert-spaces}})]
+    (:result response)))
+
+(defn rename-at
+  "Rename symbol at position."
+  [client uri line character new-name]
+  (let [response (client-request client m:rename
+                  (assoc (text-document-position-params uri line character)
+                         :newName new-name))]
+    (:result response)))
+
+(defn code-actions-at
+  "Get code actions for range."
+  [client uri start-line start-char end-line end-char & {:keys [diagnostics only]}]
+  (let [response (client-request client m:code-action
+                  {:textDocument (text-document-identifier uri)
+                   :range (range- start-line start-char end-line end-char)
+                   :context (cond-> {}
+                              diagnostics (assoc :diagnostics diagnostics)
+                              only (assoc :only only))})]
+    (:result response)))
+
+;; =============================================================================
+;; Section 13: Port-Based Routing (Cross-Protocol)
+;; =============================================================================
+;; Enable exposing defport.core ports as LSP methods via metadata.
+;;
+;; Example port with LSP metadata:
+;;   (defport.core/register-port!
+;;     {:id :find-callers
+;;      :handler find-callers-handler
+;;      :metadata {:lsp {:method "textDocument/references"
+;;                       :transform :locations}}})
+;;
+;; Usage:
+;;   (def adapter (create-adapter {...}))
+;;   (register-ports! adapter)  ; Auto-registers ports with :lsp metadata
+
+(defn- transform-result
+  "Transform port result to LSP format based on :transform metadata.
+
+   Transforms:
+   - :locations - Vector of locations [{:file :line}] -> Location[]
+   - :location  - Single {:file :line} -> Location
+   - :hover     - {:callers :callees :name} -> Hover
+   - :symbols   - Vector of {:qn :file :line} -> SymbolInformation[]
+   - nil        - Return result as-is"
+  [transform result]
+  (case transform
+    :locations
+    (mapv (fn [item]
+            (location (str "file://" (or (:file item) ""))
+                      (or (:line item) 0) 0
+                      (or (:line item) 0) 100))
+          (or (:callers result) (:locations result) result))
+
+    :location
+    (when-let [loc (first (or (:locations result) [result]))]
+      (location (str "file://" (or (:file loc) ""))
+                (or (:line loc) 0) 0
+                (or (:line loc) 0) 100))
+
+    :hover
+    {:contents (markdown
+                (str "## " (or (:function result) (:name result) "Unknown") "\n\n"
+                     (when-let [c (:callers result)]
+                       (str "**Callers:** " (if (number? c) c (count c)) "\n"))
+                     (when-let [c (:callees result)]
+                       (str "**Callees:** " (if (number? c) c (count c)) "\n"))
+                     (when-let [t (:tests result)]
+                       (str "**Tests:** " (count t)))))}
+
+    :symbols
+    (mapv (fn [item]
+            (symbol-information
+              {:name (or (:qn item) (:name item))
+               :kind :function
+               :location (location (str "file://" (or (:file item) ""))
+                                   (or (:line item) 0) 0
+                                   (or (:line item) 0) 100)}))
+          (or (:results result) result))
+
+    ;; Default: return as-is
+    result))
+
+(defn capabilities-from-registry
+  "Walk a PortRegistry and return a ServerCapabilities fragment that
+   enables each provider whose method some port has claimed via
+   :lsp/method metadata. Resolves method strings → handler-name →
+   capability key through defport.lsp.spec — single source of truth.
+
+   Static user-supplied capabilities take precedence when merged."
+  [port-registry]
+  (reduce (fn [caps port-def]
+            (let [method-str (get-in port-def [:metadata :lsp/method])
+                  handler-k  (spec/handler-name-for method-str)]
+              (if-let [cap-key (and handler-k (spec/capability-key handler-k))]
+                (update caps cap-key (fn [existing] (or existing {})))
+                caps)))
+          {}
+          (core/list-ports port-registry)))
+
+(defn- port-def-method
+  "Return the LSP method string a port def is meant for, or nil.
+   Supports two metadata shapes:
+
+     Legacy:   {:metadata {:lsp {:method \"textDocument/...\" :transform ...}}}
+     Sugar:    {:metadata {:lsp/method \"textDocument/...\"}}"
+  [port-def]
+  (or (get-in port-def [:metadata :lsp/method])
+      (get-in port-def [:metadata :lsp :method])))
+
+(defn- port-def-sugar?
+  "Sugar-style ports carry :lsp/method at the top of :metadata and their
+   handler already knows how to read raw LSP params — no legacy
+   transformation layer should wrap them."
+  [port-def]
+  (some? (get-in port-def [:metadata :lsp/method])))
+
+(defn find-ports-for-lsp
+  "Find all ports in a registry whose metadata targets an LSP method.
+
+   Accepts an optional PortRegistry instance. Defaults to the shared
+   sugar registry (`defport.sugar/*registry*`). Returns a map of
+   {lsp-method {:descriptor port-def :port port}}."
+  ([] (find-ports-for-lsp (deref #'sugar/*registry*)))
+  ([port-registry]
+   (->> (core/list-ports port-registry)
+        (filter port-def-method)
+        (map (fn [p]
+               [(port-def-method p)
+                {:descriptor p
+                 :port (core/get-port port-registry (:id p))}]))
+        (into {}))))
+
+(defn- sugar-port-handler
+  "Wrap a sugar-style Port so its raw LSP params are passed through
+   unmodified; `deflsp` already extracts position/range/etc."
+  [port]
+  (fn [params context]
+    (platform/try-any
+      (core/port-execute port (assoc context :params params))
+      (catch-any e
+        (error-response :internal-error
+                        (platform/error-message e))))))
+
+(defn- legacy-port-handler
+  "Legacy wrapper that translates LSP params to defnet-style
+   {:file :line :column :query :function-name} before invoking the
+   Port, then runs the declared :transform on the result."
+  [descriptor port]
+  (let [transform (get-in descriptor [:metadata :lsp :transform])]
+    (fn [params context]
+      (platform/try-any
+        (let [port-params (cond-> {}
+                            (:textDocument params)
+                            (assoc :file (some-> (:textDocument params)
+                                                 :uri
+                                                 (str/replace #"^file://" "")))
+                            (:position params)
+                            (-> (assoc :line (:line (:position params)))
+                                (assoc :column (:character (:position params))))
+                            (:function-name params)
+                            (assoc :function-name (:function-name params))
+                            (:query params)
+                            (assoc :query (:query params)))
+              result (core/port-execute port (assoc context :params port-params))
+              data (or (:result result) result)]
+          (transform-result transform data))
+        (catch-any e
+          (error-response :internal-error
+                          (platform/error-message e)))))))
+
+(defn register-ports!
+  "Register every port in a registry whose metadata targets an LSP
+   method as a handler on this adapter.
+
+   Two metadata shapes are supported:
+
+   - Sugar (`deflsp`): `{:metadata {:lsp/method \"textDocument/...\"}}`
+     → the port's handler is called with raw LSP params intact.
+   - Legacy: `{:metadata {:lsp {:method ... :transform ...}}}`
+     → the legacy wrapper runs, translating LSP params to defnet-style
+     params and applying the transform.
+
+   Defaults to registering from `defport.sugar/*registry*`. Pass an
+   explicit PortRegistry for isolated wiring (tests, multi-instance)."
+  ([adapter]
+   (register-ports! adapter (deref #'sugar/*registry*)))
+  ([adapter port-registry]
+   (doseq [[method {:keys [descriptor port]}] (find-ports-for-lsp port-registry)]
+     (tap> {:event :lsp/registering-port
+            :method method
+            :port-id (:id descriptor)
+            :sugar? (port-def-sugar? descriptor)})
+     (let [wrapped (if (port-def-sugar? descriptor)
+                     (sugar-port-handler port)
+                     (legacy-port-handler descriptor port))]
+       (register-method! adapter method wrapped)))
+   adapter))
+
+;; ============================================================================
+;; Progressive-disclosure DSL — deflsp / defhandler / run!
+;; ============================================================================
+;;
+;; Thin wrappers that register ports with {:lsp/method "..."} metadata
+;; and do LSP-specific context extraction (position / range / URI)
+;; from raw LSP params. Uses defport.sugar helpers for param parsing
+;; and schema generation.
+;;
+;; Usage:
+;;   (require '[defport.lsp :refer [deflsp run!]])
+;;
+;;   (deflsp hover [uri :- :string line :- :int col :- :int]
+;;     \"Return hover info at the given position.\"
+;;     {:contents {:kind \"markdown\" :value (str \"Line \" line)}})
+;;
+;;   (run! {:server-info {:name \"my-lsp\" :version \"1.0\"}
+;;          :transport :stdio})
+
+(defn- sugar-shape-form
+  "Build the form that pulls flat params out of raw LSP params for a
+   given handler-name keyword. Reads the sugar shape from
+   defport.lsp.spec instead of carrying its own table.
+
+   Only inlines the shapes the spec registry knows about — :raw is a
+   passthrough so :raw-shaped methods just see the raw params map."
+  [handler-name raw-params-form]
+  (let [entry (spec/method-for handler-name)
+        shape (or (:sugar entry) :raw)]
+    (case shape
+      :position
+      `{:uri  (get-in ~raw-params-form [:textDocument :uri])
+        :line (get-in ~raw-params-form [:position :line])
+        :col  (get-in ~raw-params-form [:position :character])}
+
+      :range
+      `{:uri   (get-in ~raw-params-form [:textDocument :uri])
+        :range (:range ~raw-params-form)}
+
+      :document
+      `{:uri (get-in ~raw-params-form [:textDocument :uri])}
+
+      :workspace-symbol
+      `{:query (:query ~raw-params-form)}
+
+      :rename
+      `{:uri      (get-in ~raw-params-form [:textDocument :uri])
+        :line     (get-in ~raw-params-form [:position :line])
+        :col      (get-in ~raw-params-form [:position :character])
+        :new-name (:newName ~raw-params-form)}
+
+      :raw raw-params-form)))
+
+(defmacro deflsp
+  "Define an LSP handler for a well-known method.
+
+  Accepts Clojure-convention docstring-first:
+
+      (deflsp hover \"Return hover info.\"
+        [uri :- :string line :- :int col :- :int]
+        {:contents {:kind \"markdown\" :value (str \"At \" uri \":\" line)}})
+
+  Also accepts the legacy docstring-in-body shape for backward
+  compatibility:
+
+      (deflsp hover
+        [uri :- :string line :- :int col :- :int]
+        \"Return hover info.\"
+        {:contents ...})
+
+  The handler-name's keyword form is looked up in
+  defport.lsp.spec/methods. The spec entry tells the macro which
+  wire-method string to attach, which sugar shape to extract, and
+  which capability the port implies.
+
+  Sugar shapes (read from spec at expansion time):
+  - :position   — [uri :- :string line :- :int col :- :int]
+  - :range      — [uri :- :string range :- :map]
+  - :document   — [uri :- :string]
+  - :workspace-symbol — [query :- :string]
+  - :rename     — [uri line col new-name]
+  - :raw        — passthrough
+
+  The generated port carries {:lsp/method \"textDocument/...\"}
+  metadata; the LSP adapter routes requests to it at dispatch time."
+  [handler-name & more]
+  (let [;; Accept either (deflsp name \"doc\" [params] body...) or the
+        ;; legacy (deflsp name [params] \"doc\" body...).
+        [leading-doc more] (if (string? (first more))
+                             [(first more) (rest more)]
+                             [nil more])
+        params             (first more)
+        body               (rest more)
+        [trailing-doc body] (if (and (nil? leading-doc) (string? (first body)))
+                              [(first body) (rest body)]
+                              [nil body])
+        doc                (or leading-doc trailing-doc)
+        method-key (keyword (clojure.core/name handler-name))
+        entry      (spec/method-for method-key)
+        method-str (or (:method entry)
+                       (throw (ex-info (str "Unknown LSP method: " method-key
+                                            ". Use defhandler for custom methods.")
+                                       {:method method-key})))
+        parsed     (sugar/parse-params params)
+        schema     (sugar/params->json-schema parsed)
+        pnames     (mapv :name (:params parsed))
+        ctx-name   (:context-name parsed)
+        raw-sym       (gensym "raw-params__")
+        extracted-sym (gensym "extracted__")
+        ctx-sym       (gensym "context__")]
+    `(let [handler# (fn [~ctx-sym]
+                      (let [~raw-sym (:params ~ctx-sym)
+                            ~extracted-sym ~(sugar-shape-form method-key raw-sym)
+                            ~@(when ctx-name [ctx-name ctx-sym])
+                            ~@(mapcat (fn [n]
+                                        [n `(get ~extracted-sym ~(keyword (clojure.core/name n)))])
+                                      pnames)]
+                        ~@body))
+           port# {:id ~(keyword (clojure.core/name handler-name))
+                  :name ~(clojure.core/name handler-name)
+                  :description ~(or doc "")
+                  :input-schema ~schema
+                  :handler handler#
+                  :metadata {:lsp/method ~method-str}}]
+       (core/register-port! sugar/*registry* port#)
+       port#)))
+
+(defmacro defhandler
+  "Define an LSP handler for an arbitrary method string.
+
+  Useful when the method isn't in the standard sugar-method-lookup
+  table, or when you want full control over the params shape.
+
+  Usage:
+    (defhandler \"textDocument/semanticTokens/full\"
+      [uri :- :string]
+      \"Return semantic tokens\"
+      {:data [...]})"
+  [method-string params & body]
+  (let [[doc body] (sugar/extract-doc-and-body body)]
+    `(sugar/define-port ~(symbol (str "lsp-handler-" (hash method-string)))
+       ~@(when doc [doc])
+       {:lsp/method ~method-string}
+       ~params
+       ~@body)))
+
+;; ============================================================================
+;; Adapter multimethod registration
+;; ============================================================================
+
+(defmethod sugar/create-adapter :lsp
+  [_protocol opts]
+  (let [registry (or (:registry opts) (deref #'sugar/*registry*))
+        ;; Merge auto-computed capabilities under user-supplied ones.
+        derived (capabilities-from-registry registry)
+        opts'   (update opts :capabilities #(merge derived %))
+        adapter (create-adapter opts')]
+    ;; Lifecycle (initialize/initialized/shutdown/exit) + document
+    ;; sync (didOpen/didChange/didSave/didClose) defaults. Doing this
+    ;; here means consumers don't have to remember to call
+    ;; register-default-handlers! — the LSP adapter boots complete.
+    (register-default-handlers! adapter)
+    ;; Auto-register any ports that carry :lsp/method metadata
+    (register-ports! adapter registry)
+    adapter))
+
+;; ============================================================================
+;; Top-level run! / stop!
+;; ============================================================================
+
+(defn run!
+  "Start an LSP server on the given transport.
+
+  Opts:
+    :server-info - {:name ... :version ...}
+    :transport   - :stdio (default) or a pre-built Transport
+    :registry    - PortRegistry instance (default: defport.sugar/*registry*)"
+  [opts]
+  (sugar/run! (assoc opts :protocol :lsp)))
+
+(defn stop!
+  "Stop an LSP server started with run!."
+  [server]
+  (sugar/stop! server))
