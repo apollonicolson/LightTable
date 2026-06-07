@@ -92,7 +92,10 @@
                                    (cm6-results/line-of (editor/->cm-ed e) (keyword id)))))
        :resultCount   (fn [] (when-let [e (ed)]
                                (if (editor/cm6? e) (cm6-results/count-results (editor/->cm-ed e)) 0)))
-       :removeResult  (fn [id block?] (when-let [e (ed)] (editor/remove-result-widget e (keyword id) (boolean block?))) nil)})
+       :removeResult  (fn [id block?] (when-let [e (ed)] (editor/remove-result-widget e (keyword id) (boolean block?))) nil)
+       ;; drive the full eval manager path (::inline-results etc.) on the active editor
+       :evalResult    (fn [text line] (when-let [e (ed)] (object/raise e :editor.result text {:line line} {:type :inline})) nil)
+       :evalException (fn [ex line] (when-let [e (ed)] (object/raise e :editor.exception ex {:line line})) nil)})
 
 (defn install!
   "Expose the editor seam on window.__lt_test when LT_TEST_BRIDGE is set. No-op

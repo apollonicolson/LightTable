@@ -218,3 +218,28 @@ test('CM6 live — eval result widgets (render, auto-track through edits, remove
   expect(await lt('resultPresent', 'r1')).toBe(false);
   expect(await widgets()).toBe(1);
 });
+
+// ADR 0009 — eval.cljs full path on CM6: the :editor.result manager (::inline-
+// results) creates an ::inline-result whose CM6 branch uses cm6.results.
+test('CM6 live — eval inline result via the eval manager (full path)', async () => {
+  await lt('setVal', 'one\ntwo\nthree');
+  const marks = () => win.evaluate(() => document.querySelectorAll('.result-mark').length);
+  await lt('evalResult', '=> 42', 1);
+  await win.waitForFunction(() => document.querySelectorAll('.result-mark').length > 0);
+  expect(await marks()).toBe(1);
+  // re-eval the SAME line replaces the previous result (manager keys by line) → still 1
+  await lt('evalResult', '=> 43', 1);
+  expect(await marks()).toBe(1);
+  // a result on a different line coexists
+  await lt('evalResult', '=> 99', 2);
+  expect(await marks()).toBe(2);
+});
+
+// exception path renders a block widget below the line
+test('CM6 live — eval exception via the eval manager (block widget)', async () => {
+  await lt('setVal', 'boom\nok');
+  const ex = () => win.evaluate(() => document.querySelectorAll('.inline-exception').length);
+  await lt('evalException', 'NPE', 0);
+  await win.waitForFunction(() => document.querySelectorAll('.inline-exception').length > 0);
+  expect(await ex()).toBe(1);
+});

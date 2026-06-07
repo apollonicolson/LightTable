@@ -217,15 +217,28 @@
           :reaction (fn [this]
                       (object/destroy! this)))
 
+;; Registry key for an editor's :widgets map. CM5 keys by LineHandle (a stable
+;; identity); CM6 has no line handles, so key by line NUMBER. CM6 result widgets
+;; auto-track, so a stale number only risks a duplicate on the rare cross-eval line
+;; shift, never a crash (ADR 0009).
+;; `edobj` is the EDITOR OBJECT (cm6?/line-handle need it; the manager's
+;; (:ed @this) is the raw view, which would fail both).
+(defn- widget-key [edobj line-num type]
+  [(if (ed/cm6? edobj) line-num (ed/line-handle edobj line-num)) type])
+
 (behavior ::clear-mark
           :triggers #{:clear!}
           :reaction (fn [this]
-                      (when (deref (:ed @this))
-                        (js/CodeMirror.off (:line @this) "change" (:listener @this))
-                        (js/CodeMirror.off (:line @this) "delete" (:delete @this))
-                        (.clear (:mark @this))
-                        (object/raise this :clear)
-                        (object/raise this :cleared))))
+                      (if (:cm6? @this)
+                        (do (ed/remove-result-widget (:ed @this) (:widget-id @this) false)
+                            (object/raise this :clear)
+                            (object/raise this :cleared))
+                        (when (deref (:ed @this))
+                          (js/CodeMirror.off (:line @this) "change" (:listener @this))
+                          (js/CodeMirror.off (:line @this) "delete" (:delete @this))
+                          (.clear (:mark @this))
+                          (object/raise this :clear)
+                          (object/raise this :cleared)))))
 
 (behavior ::copy-result
           :triggers #{:copy}
@@ -235,8 +248,10 @@
 (behavior ::changed
           :triggers #{:changed}
           :reaction (fn [this]
-                      (.changed (:mark @this))
-                      ))
+                      ;; CM6 widgets re-render via the decoration field; CM5 needs an
+                      ;; explicit .changed to re-measure the marked widget.
+                      (when-not (:cm6? @this)
+                        (.changed (:mark @this)))))
 
 (behavior ::update!
           :triggers #{:update!}
@@ -254,7 +269,9 @@
 (behavior ::move-mark
           :triggers #{:move!}
           :reaction (fn [this ch]
-                      (when ch
+                      ;; CM6 decorations auto-track, so :move! is never raised for a
+                      ;; CM6 result (no line listener) — guard against a stray fire.
+                      (when (and ch (not (:cm6? @this)) (:mark @this))
                         (let [orig (:mark @this)
                               loc (.find orig)
                               cur-line (ed/lh->line (:ed @this) (:line @this))]
@@ -278,22 +295,32 @@
                 :triggers #{:click :double-click :clear!}
                 :tags #{:inline :inline.result}
                 :init (fn [this info]
-                        (when-let [ed (ed/->cm-ed (:ed info))]
-                          (let [content (->inline-res this info)
-                                delete (fn [_]
-                                         (object/raise this :clear!))
-                                listener (fn [line change]
-                                           (object/raise this :move! change))]
-                            (js/CodeMirror.on (:line info) "change" listener)
-                            (js/CodeMirror.on (:line info) "delete" delete)
-                            (object/merge! this (assoc info
-                                                  :listener listener
-                                                  :delete delete
-                                                  :mark (ed/bookmark ed
-                                                                     {:line (-> info :loc :line)}
-                                                                     {:widget content
-                                                                      :insertLeft true})))
-                            content))))
+                        (let [edobj (:ed info)]
+                          (if (ed/cm6? edobj)
+                            ;; CM6: an inline widget decoration that auto-tracks — no
+                            ;; bookmark, no per-line listeners (the CM5 relocation path).
+                            (let [content (->inline-res this info)
+                                  id (keyword (str "lt-ir-" (gensym)))]
+                              (ed/add-result-widget edobj (-> info :loc :line) content
+                                                    {:id id :block? false})
+                              (object/merge! this (assoc info :widget-id id :cm6? true))
+                              content)
+                            (when-let [ed (ed/->cm-ed edobj)]
+                              (let [content (->inline-res this info)
+                                    delete (fn [_]
+                                             (object/raise this :clear!))
+                                    listener (fn [line change]
+                                               (object/raise this :move! change))]
+                                (js/CodeMirror.on (:line info) "change" listener)
+                                (js/CodeMirror.on (:line info) "delete" delete)
+                                (object/merge! this (assoc info
+                                                      :listener listener
+                                                      :delete delete
+                                                      :mark (ed/bookmark ed
+                                                                         {:line (-> info :loc :line)}
+                                                                         {:widget content
+                                                                          :insertLeft true})))
+                                content))))))
 
 
 
@@ -303,9 +330,8 @@
 (behavior ::inline-results
           :triggers #{:editor.result}
           :reaction (fn [this res loc opts]
-                      (let [ed (:ed @this)
-                            type (or (:type opts) :inline)
-                            line (ed/line-handle ed (:line loc))
+                      (let [type (or (:type opts) :inline)
+                            line (if (ed/cm6? this) (:line loc) (ed/line-handle this (:line loc)))
                             res-obj (object/create ::inline-result {:ed this
                                                                     :class (name type)
                                                                     :opts opts
@@ -317,7 +343,7 @@
                             (object/merge! res-obj {:open true}))
                           (object/raise prev :clear!))
                         (when (:start-line loc)
-                          (doseq [widget (map #(get (@this :widgets) [(ed/line-handle ed %) type]) (range (:start-line loc) (:line loc)))
+                          (doseq [widget (map #(get (@this :widgets) (widget-key this % type)) (range (:start-line loc) (:line loc)))
                                   :when widget]
                             (object/raise widget :clear!)))
                         (object/update! this [:widgets] assoc [line type] res-obj))))
@@ -348,26 +374,32 @@
 (object/object* ::underline-result
                 :tags #{:inline :inline.underline-result}
                 :init (fn [this info]
-                        (let [content (->underline-result this info)
-                              delete (fn [_]
-                                       (object/raise this :clear!))
-                              listener (fn [line change]
-                                         (object/raise this :move! change))]
-                          (js/CodeMirror.on (:line info) "change" listener)
-                          (js/CodeMirror.on (:line info) "delete" delete)
-                          (object/merge! this (assoc info
-                                                :widget (ed/line-widget (ed/->cm-ed (:ed info))
-                                                                        (-> info :loc :line)
-                                                                        content
-                                                                        {:coverGutter false
-                                                                         :above (-> info :above)})))
-                          content)))
+                        (let [edobj (:ed info)
+                              content (->underline-result this info)]
+                          (if (ed/cm6? edobj)
+                            (let [id (keyword (str "lt-ur-" (gensym)))]
+                              (ed/add-result-widget edobj (-> info :loc :line) content
+                                                    {:id id :block? true})
+                              (object/merge! this (assoc info :widget-id id :cm6? true))
+                              content)
+                            (let [delete (fn [_]
+                                           (object/raise this :clear!))
+                                  listener (fn [line change]
+                                             (object/raise this :move! change))]
+                              (js/CodeMirror.on (:line info) "change" listener)
+                              (js/CodeMirror.on (:line info) "delete" delete)
+                              (object/merge! this (assoc info
+                                                    :widget (ed/line-widget (ed/->cm-ed (:ed info))
+                                                                            (-> info :loc :line)
+                                                                            content
+                                                                            {:coverGutter false
+                                                                             :above (-> info :above)})))
+                              content)))))
 
 (behavior ::underline-results
           :triggers #{:editor.result.underline}
           :reaction (fn [this res loc opts]
-                      (let [ed (:ed @this)
-                            line (ed/line-handle ed (:line loc))
+                      (let [line (if (ed/cm6? this) (:line loc) (ed/line-handle this (:line loc)))
                             res-obj (object/create ::underline-result {:ed this
                                                                        :opts opts
                                                                        :result res
@@ -378,7 +410,7 @@
                             (object/merge! res-obj {:open true}))
                           (object/raise prev :clear!))
                         (when (:start-line loc)
-                          (doseq [widget (map #(get (@this :widgets) [(ed/line-handle ed %) :underline]) (range (:start-line loc) (:line loc)))
+                          (doseq [widget (map #(get (@this :widgets) (widget-key this % :underline)) (range (:start-line loc) (:line loc)))
                                   :when widget]
                             (object/raise widget :clear!)))
                         (object/update! this [:widgets] assoc [line :underline] res-obj))))
@@ -419,8 +451,10 @@
 (behavior ::ex-clear
           :triggers #{:clear!}
           :reaction (fn [this]
-                      (when (ed/->cm-ed (:ed @this))
-                        (ed/remove-line-widget (ed/->cm-ed (:ed @this)) (:widget @this)))
+                      (if (:cm6? @this)
+                        (ed/remove-result-widget (:ed @this) (:widget-id @this) true)
+                        (when (ed/->cm-ed (:ed @this))
+                          (ed/remove-line-widget (ed/->cm-ed (:ed @this)) (:widget @this))))
                       (object/raise this :clear)
                       (object/raise this :cleared)))
 
@@ -444,20 +478,26 @@
                 :init (fn [this info]
                         (if-not (-> info :loc :line)
                           (notifos/set-msg! (str (:ex info)) {:class "error"})
-                          (let [content (->inline-exception this info)]
-                            (object/merge! this (assoc info
-                                                  :widget (ed/line-widget (ed/->cm-ed (:ed info))
-                                                                          (-> info :loc :line)
-                                                                          content
-                                                                          {:coverGutter false})))
-                            content))))
+                          (let [edobj (:ed info)
+                                content (->inline-exception this info)]
+                            (if (ed/cm6? edobj)
+                              (let [id (keyword (str "lt-ex-" (gensym)))]
+                                (ed/add-result-widget edobj (-> info :loc :line) content
+                                                      {:id id :block? true})
+                                (object/merge! this (assoc info :widget-id id :cm6? true))
+                                content)
+                              (do (object/merge! this (assoc info
+                                                        :widget (ed/line-widget (ed/->cm-ed (:ed info))
+                                                                                (-> info :loc :line)
+                                                                                content
+                                                                                {:coverGutter false})))
+                                  content))))))
 
 (behavior ::inline-exceptions
           :triggers #{:editor.exception}
           :reaction (fn [this ex loc]
                       (when (and ex loc (>= (:line loc) 0))
-                        (let [ed (:ed @this)
-                              line (ed/line-handle ed (:line loc))
+                        (let [line (if (ed/cm6? this) (:line loc) (ed/line-handle this (:line loc)))
                               ex-obj (object/create ::inline-exception {:ed this
                                                                         :ex ex
                                                                         :loc loc
@@ -470,7 +510,7 @@
                             (object/raise prev :clear!))
                           (when (:start-line loc)
                             (doseq [type [:inline :underline]
-                                    widget (map #(get (@this :widgets) [(ed/line-handle ed %) type]) (range (:start-line loc) (:line loc)))
+                                    widget (map #(get (@this :widgets) (widget-key this % type)) (range (:start-line loc) (:line loc)))
                                     :when widget]
                               (object/raise widget :clear!)))
                           (object/update! this [:widgets] assoc [line :inline] ex-obj)))))
