@@ -96,9 +96,7 @@
        :clearSearch  (fn [] (when-let [e (ed)] (editor/clear-search e)) nil)
        :replaceSearch (fn [q r opts all?] (when-let [e (ed)] (editor/replace-search e q r (js->clj opts :keywordize-keys true) all?)))
        :searchMatchCount (fn [] (when-let [e (ed)]
-                                  (if (editor/cm6? e)
-                                    ((:count cm6-find/layer) (cm6-view/view-state (editor/->cm-ed e)))
-                                    0)))
+                                  ((:count cm6-find/layer) (cm6-view/view-state (editor/->cm-ed e)))))
        ;; eval result-widget seam (ADR 0009): add a result widget at a line and
        ;; track it by id (the CM6 decoration that replaces CM5 bookmarks/widgets).
        :addResult (fn [id line text block?]
@@ -110,10 +108,9 @@
                       nil))
        :resultPresent (fn [id] (when-let [e (ed)] (boolean (editor/result-widget-present? e (keyword id)))))
        :resultLine    (fn [id] (when-let [e (ed)]
-                                 (when (editor/cm6? e)
-                                   (cm6-results/line-of (editor/->cm-ed e) (keyword id)))))
+                                 (cm6-results/line-of (editor/->cm-ed e) (keyword id))))
        :resultCount   (fn [] (when-let [e (ed)]
-                               (if (editor/cm6? e) (cm6-results/count-results (editor/->cm-ed e)) 0)))
+                               (cm6-results/count-results (editor/->cm-ed e))))
        :removeResult  (fn [id block?] (when-let [e (ed)] (editor/remove-result-widget e (keyword id) (boolean block?))) nil)
        ;; drive the full eval manager path (::inline-results etc.) on the active editor
        :evalResult    (fn [text line] (when-let [e (ed)] (object/raise e :editor.result text {:line line} {:type :inline})) nil)

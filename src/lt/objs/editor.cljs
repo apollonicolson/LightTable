@@ -49,10 +49,8 @@
     (:ed @e)
     e))
 
-(defn cm6?
-  "True if editor `e` is CM6-backed (carries :backend-kind :cm6)."
-  [e]
-  (and (satisfies? IDeref e) (= :cm6 (:backend-kind @e))))
+;; cm6? predicate removed — CM6 is the only backend, so it was always true (the
+;; dual-backend discriminator). :backend-kind stays as a label / future-backend tag.
 
 (defn ->elem
   "Return the editor's outer DOM element (the CM6 view's .dom)."
@@ -600,10 +598,7 @@
   [e gen]
   (be/-dirty? (backend e) gen))
 
-(defn get-doc
-  "CM6 has no detachable Doc — always nil. Callers (save-as) seed a new doc from
-  the editor's value instead."
-  [_e] nil)
+;; get-doc removed — CM6 has no detachable Doc; save-as seeds from (editor/->val).
 
 (defn fold-code
   "Toggle the fold at the cursor (CM6 foldCode StateCommand; the editor carries the

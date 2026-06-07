@@ -69,14 +69,12 @@
                         (let [type (files/path->type path)
                               prev-tags (-> @this :info :tags)
                               mode (files/path->mode path)
-                              ;; CM6 has no detachable Doc — seed the new doc from
-                              ;; the editor's value; CM5 hands over its live Doc.
-                              neue-doc (doc/create (merge {:line-ending files/line-ending
-                                                           :mtime (files/stats path)
-                                                           :mime mode}
-                                                          (if (editor/cm6? this)
-                                                            {:content (editor/->val this)}
-                                                            {:doc (editor/get-doc this)})))]
+                              ;; Seed the new doc from the editor's value (CM6 keeps
+                              ;; content in the view, not a detachable Doc).
+                              neue-doc (doc/create {:line-ending files/line-ending
+                                                    :mtime (files/stats path)
+                                                    :mime mode
+                                                    :content (editor/->val this)})]
                           (when (:doc @this)
                             (object/raise (:doc @this) :close.force))
                           (doc/register-doc neue-doc path)

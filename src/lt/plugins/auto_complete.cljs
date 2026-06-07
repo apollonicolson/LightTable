@@ -180,8 +180,7 @@
           no per-line change listener; this drives the same :line-change refresh)."
           :reaction (fn [this & _]
                       (when (and (:active @hinter)
-                                 (identical? (:ed @hinter) this)
-                                 (editor/cm6? this))
+                                 (identical? (:ed @hinter) this))
                         (on-line-change nil nil))))
 
 (behavior ::intra-buffer-string-hints
