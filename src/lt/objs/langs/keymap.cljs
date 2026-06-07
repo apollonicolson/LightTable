@@ -108,7 +108,7 @@
                                               :result (object/->content this)
                                               :above (boolean (< (:prev-line opts) (:line opts)))
                                               :loc opts
-                                              :line (editor/line-handle ed (:line opts))}))
+                                              :line (:line opts)}))
 
 
 (defui ->helper [keym]

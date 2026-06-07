@@ -14,8 +14,8 @@
   (:require-macros [lt.macros :refer [behavior defui]]))
 
 (defn doc-on-line? [editor line]
-  (let [line (editor/line-handle editor line)]
-    (get-in @editor [:widgets [line :underline]])))
+  ;; CM6 keys :widgets by line number (no LineHandle).
+  (get-in @editor [:widgets [line :underline]]))
 
 (defn remove! [editor cur]
   (object/update! editor [:widgets] dissoc [(:line @cur) :underline])
@@ -29,7 +29,7 @@
 (defn inline-doc [this res opts loc]
   (let [ed (:ed @this)
         type :underline
-        line (editor/line-handle ed (:line loc))
+        line (:line loc)
         res-obj (object/create :lt.objs.eval/underline-result {:ed this
                                                                :class (name type)
                                                                :opts opts
