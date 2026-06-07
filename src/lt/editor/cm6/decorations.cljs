@@ -11,11 +11,12 @@
   spec, and \"where is my mark now / was its text deleted\" becomes a RangeSet
   query (`tracked-range`) rather than an event subscription.
 
-  A single StateField holds the set; three StateEffects mutate it (add / remove-
-  by-id / clear). The field is provided to the view as decorations, so widgets
-  render live. The RANGE-MAPPING (the load-bearing correctness — decorations move
-  with edits, collapse when their text is deleted) is pure and node-tested here;
-  widget DOM rendering needs a real view (Electron)."
+  Each consumer makes an independent LAYER (`make-layer`): a StateField + three
+  StateEffects (add / remove-by-id / clear). Layers coexist — CM6 collects
+  decorations from every field — so clearing find's highlight never touches eval's
+  inline results. The RANGE-MAPPING (the load-bearing correctness — decorations
+  move with edits, collapse when their text is deleted) is pure and node-tested
+  here; widget DOM rendering needs a real view (Electron)."
   (:require ["@codemirror/state" :as cm-state]
             ["@codemirror/view" :as cm-view]))
 
@@ -61,58 +62,55 @@
   ([id el] (widget id el nil))
   ([id el opts] (.widget Decoration (with-meta-spec opts id [["widget" (element-widget el)]]))))
 
-;; ── effects (the only way to mutate the set) ──────────────────────────────────
-(def add-effect    (.define StateEffect))   ; value #js{:deco :from :to}
-(def remove-effect (.define StateEffect))   ; value id
-(def clear-effect  (.define StateEffect))   ; value nil
+;; ── layers ────────────────────────────────────────────────────────────────────
+;; A LAYER is an independent decoration field + its three effects. Each consumer
+;; (find highlight, eval inline results, watches) owns its own layer, so clearing
+;; one never touches another — multiple layers coexist (CM6 collects decorations
+;; from every field via the EditorView.decorations facet). The deco CONSTRUCTORS
+;; above are layer-independent; only the field/effects/queries are per-layer.
 
-(defn add
-  "Effect spec: add `deco` over [from, to) (to defaults to from for point widgets)."
-  ([deco from] (add deco from from))
-  ([deco from to] (.of add-effect [deco from to])))
-
-(defn remove-by-id "Effect spec: remove the decoration tagged `id`." [id]
-  (.of remove-effect id))
-
-(defn clear "Effect spec: drop all decorations." []
-  (.of clear-effect nil))
-
-(defn- apply-effect [set e]
-  (cond
-    (.is e add-effect)    (let [[deco from to] (.-value e)]
-                            (.update set #js {:add #js [(.range deco from to)]
-                                              :sort true}))
-    (.is e remove-effect) (.update set #js {:filter (fn [_ _ value]
-                                                      (not= (.-value e) (.. value -spec -id)))})
-    (.is e clear-effect)  (.-none Decoration)
-    :else set))
-
-(def deco-field
-  "The StateField holding the live DecorationSet. Add it to a state's extensions
-  (cm6/make-state's `extra`) to enable tracked decorations + their rendering."
-  (.define StateField
-           #js {:create (fn [_] (.-none Decoration))
-                :update (fn [set tr]
-                          ;; map existing decorations through the edit FIRST, then
-                          ;; apply this transaction's add/remove/clear effects.
-                          (reduce apply-effect (.map set (.-changes tr)) (.-effects tr)))
-                :provide (fn [f] (.from (.-decorations EditorView) f))}))
-
-;; ── queries (the line-handle replacement) ─────────────────────────────────────
-(defn decoration-set "The current DecorationSet of `state`." [state]
-  (.field state deco-field))
-
-(defn tracked-range
-  "Current {:from :to} of the decoration tagged `id`, or nil if it is no longer in
-  the set. A collapsed range (from == to) means its text was deleted — the CM6
-  signal that replaces CM5's line-handle `delete` event."
-  [state id]
-  (let [it (.iter (decoration-set state))]
-    (loop []
-      (when (.-value it)
-        (if (= id (.. it -value -spec -id))
-          {:from (.-from it) :to (.-to it)}
-          (do (.next it) (recur)))))))
-
-(defn decoration-count "Number of decorations currently tracked in `state`." [state]
-  (.-size (decoration-set state)))
+(defn make-layer
+  "Create an independent decoration layer. Returns a map:
+   :field        — a StateField to add to the editor's extensions (renders the set)
+   :add          — (deco from [to]) → effect spec; to defaults to from (point)
+   :remove-by-id — (id) → effect spec dropping the deco tagged id
+   :clear        — () → effect spec dropping THIS layer's decorations only
+   :ranges       — (state) → the live DecorationSet
+   :tracked-range— (state id) → {:from :to} of deco id, or nil if gone (collapsed
+                   range = its text was deleted; the line-handle delete signal)
+   :count        — (state) → number of decorations in this layer"
+  []
+  (let [add-effect    (.define StateEffect)
+        remove-effect (.define StateEffect)
+        clear-effect  (.define StateEffect)
+        apply-effect  (fn [set e]
+                        (cond
+                          (.is e add-effect)    (let [[deco from to] (.-value e)]
+                                                  (.update set #js {:add #js [(.range deco from to)]
+                                                                    :sort true}))
+                          (.is e remove-effect) (.update set #js {:filter (fn [_ _ value]
+                                                                            (not= (.-value e) (.. value -spec -id)))})
+                          (.is e clear-effect)  (.-none Decoration)
+                          :else set))
+        field (.define StateField
+                       #js {:create (fn [_] (.-none Decoration))
+                            ;; map existing decorations through the edit FIRST, then
+                            ;; apply this transaction's add/remove/clear effects.
+                            :update (fn [set tr]
+                                      (reduce apply-effect (.map set (.-changes tr)) (.-effects tr)))
+                            :provide (fn [f] (.from (.-decorations EditorView) f))})
+        ranges (fn [state] (.field state field))]
+    {:field field
+     :add (fn add ([deco from] (add deco from from))
+                  ([deco from to] (.of add-effect [deco from to])))
+     :remove-by-id (fn [id] (.of remove-effect id))
+     :clear (fn [] (.of clear-effect nil))
+     :ranges ranges
+     :tracked-range (fn [state id]
+                      (let [it (.iter (ranges state))]
+                        (loop []
+                          (when (.-value it)
+                            (if (= id (.. it -value -spec -id))
+                              {:from (.-from it) :to (.-to it)}
+                              (do (.next it) (recur)))))))
+     :count (fn [state] (.-size (ranges state)))}))
