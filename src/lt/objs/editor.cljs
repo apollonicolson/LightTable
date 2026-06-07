@@ -961,10 +961,12 @@
 (object* ::editor
          :tags #{:editor :editor.inline-result :editor.keys.normal}
          :init (fn [obj info]
-                 (if (= :cm6 (:backend info))
-                   ;; CM6-backed editor (M5): a detached EditorView; its .dom is the
-                   ;; tab element. CM5 event wiring is skipped (CM6 events are a later
-                   ;; capability slice); the seam drives it via :backend.
+                 ;; FLIP (ADR 0009 step 4): CM6 is the DEFAULT — every editor is CM6
+                 ;; unless a caller explicitly opts back to CM5 with {:backend :cm5}
+                 ;; (kept as an escape hatch until CM5 is deleted in the next step).
+                 (if (not= :cm5 (:backend info))
+                   ;; CM6-backed editor: a detached EditorView; its .dom is the tab
+                   ;; element. The seam drives it via :backend.
                    (let [compartments (cm6-options/make-compartments)
                          lang-compartment (cm6-modes/make-compartment)
                          ;; CM6's single updateListener → the LightTable :change/:move

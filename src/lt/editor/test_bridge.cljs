@@ -51,7 +51,14 @@
                        (tabs/add! e)
                        (tabs/active! e)
                        (boolean e)))
+       ;; Open a DEFAULT editor (no :backend) — after the flip this must be CM6.
+       :openDefault (fn [content]
+                      (let [e (pool/create {:content (or content "")})]
+                        (tabs/add! e)
+                        (tabs/active! e)
+                        (boolean e)))
        :backendKind (fn [] (when-let [e (ed)] (name (or (:backend-kind @e) :cm5))))
+       :focus    (fn [] (when-let [e (ed)] (editor/focus e)) nil)
        :changeCount (fn [] (when-let [e (ed)] (::change-count @e 0)))
        :val      (fn [] (when-let [e (ed)] (editor/->val e)))
        :setVal   (fn [v] (when-let [e (ed)] (editor/set-val e v)) nil)

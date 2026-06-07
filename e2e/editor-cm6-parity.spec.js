@@ -26,13 +26,15 @@ test.beforeAll(async () => {
     env: { ...process.env, LT_TEST_BRIDGE: '1' },
   });
   win = await app.firstWindow();
-  await win.waitForSelector('.CodeMirror');
+  // After the flip the startup editor is CM6 (.cm-content), not CM5 (.CodeMirror).
+  await win.waitForSelector('.cm-content, .CodeMirror');
   await expect.poll(() => win.evaluate(() => !!(window.__lt_test && window.__lt_test.active()))).toBe(true);
   // Open a LIVE CM6 editor in a tab and make it active.
   expect(await lt('openCm6', '')).toBe(true);
-  // The active editor is now CM6, and CM6's view DOM rendered (.cm-editor).
+  // The active editor is now CM6 (backendKind confirms it). After the flip the
+  // startup editor is ALSO CM6, so a bare '.cm-editor' wait is ambiguous — the
+  // backendKind check is the authoritative readiness signal.
   expect(await lt('backendKind')).toBe('cm6');
-  await win.waitForSelector('.cm-editor');
 });
 
 test.afterAll(async () => {
@@ -89,7 +91,8 @@ test('CM6 live — history (undo / redo)', async () => {
 
 test('CM6 live — keymap (real keyboard editing: typing / Enter / Backspace)', async () => {
   await lt('setVal', '');
-  await win.click('.cm-content');            // focus the CM6 contenteditable
+  await lt('focus');                          // focus the ACTIVE CM6 editor (post-flip
+                                              // there are several .cm-content elements)
   await win.keyboard.type('abc');
   await win.keyboard.press('Enter');
   await win.keyboard.type('d');
@@ -285,4 +288,11 @@ test('CM6 live — doc-model (CM6 editor seeds content from its doc + edits)', a
   expect(await lt('val')).toBe('seeded\nfrom\ndoc');   // content came from the doc
   await lt('replace', { line: 0, ch: 0 }, { line: 0, ch: 6 }, 'EDITED');
   expect(await lt('val')).toBe('EDITED\nfrom\ndoc');   // edits land in the CM6 view
+});
+
+// ADR 0009 step 4 — THE FLIP: a default editor (no :backend) is now CM6.
+test('CM6 live — flip: default editor is CM6', async () => {
+  expect(await lt('openDefault', 'default editor')).toBe(true);
+  expect(await lt('backendKind')).toBe('cm6');         // CM6 is the default backend
+  expect(await lt('val')).toBe('default editor');
 });
