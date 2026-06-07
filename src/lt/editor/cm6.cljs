@@ -216,7 +216,12 @@
 ;; fns. Headless, we hand them a target whose `dispatch` captures the resulting
 ;; transaction's state. A command that can't run (empty history) returns false
 ;; and never dispatches, so the original state passes through unchanged.
-(defn- run-command [state cmd]
+(defn run-command
+  "Run a CM6 StateCommand `cmd` against `state` headlessly, returning the resulting
+  state (unchanged if the command did not dispatch). CM6 StateCommands take a
+  {:state :dispatch} target; this captures the dispatched transaction's state. The
+  live editor runs commands against the EditorView; this is the pure analogue."
+  [state cmd]
   (let [result (atom state)]
     (cmd #js {:state state
               :dispatch (fn [tr] (reset! result (.-state tr)))})
