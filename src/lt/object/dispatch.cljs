@@ -17,8 +17,14 @@
 
   Event shapes:
     [:lt.object/dispatched {:behavior name :trigger k :time ms}]
-    [:lt.object/error      {:behavior name :trigger k :error e}]"
-  (:refer-clojure :exclude []))
+    [:lt.object/error      {:behavior name :trigger k :error e}]
+
+  Dispatch observation is OPT-IN (default off) — like lume's opt-in
+  `lume.infra.observe`. raise* is a hot path (per reaction, per event), and cljs
+  `tap>` schedules a macrotask + allocates even with no subscribers; so when
+  observation is off, `observe-dispatched!` does nothing and allocates nothing.
+  Enable with `observe!` (e.g. a profiler / time-travel view). Errors are rare,
+  so error observation is always on.")
 
 (defmulti invoke
   "Invoke behavior `beh`'s :reaction with `obj` and the seq `args`. Dispatched on
@@ -37,12 +43,30 @@
   "tap> event tag emitted when a behavior reaction throws."
   :lt.object/error)
 
+;; When false (default), dispatch observation is a no-op — no per-dispatch
+;; allocation, no tap, no scheduled macrotask. Toggle with `observe!`.
+(defonce ^:private !observing (atom false))
+
+(defn observe!
+  "Turn dispatch observation on/off (default off, so the hot path pays nothing).
+  Callers that `add-tap` a dispatch subscriber should enable this."
+  ([] (observe! true))
+  ([on?] (reset! !observing (boolean on?))))
+
+(defn observing?
+  "Is dispatch observation enabled?"
+  []
+  @!observing)
+
 (defn observe-dispatched!
-  "Emit a dispatch observation on the tap> stream."
-  [m]
-  (tap> [dispatched-event m]))
+  "Emit a dispatch observation IFF observation is enabled. Takes raw pieces (not
+  a pre-built map) so nothing is allocated on the hot path when observation is
+  off."
+  [behavior trigger time]
+  (when @!observing
+    (tap> [dispatched-event {:behavior behavior :trigger trigger :time time}])))
 
 (defn observe-error!
-  "Emit an error observation on the tap> stream."
-  [m]
-  (tap> [error-event m]))
+  "Emit an error observation (always — errors are rare, not hot)."
+  [behavior trigger error]
+  (tap> [error-event {:behavior behavior :trigger trigger :error error}]))

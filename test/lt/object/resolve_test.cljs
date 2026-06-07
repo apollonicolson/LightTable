@@ -62,6 +62,29 @@
                                    behaviors {} [:base :base.more])))
         "already-collected :a survives :exa's exclusion")))
 
+(deftest plain-duplicate-across-tags-is-not-deduped
+  ;; the seen-set is only written for :exclusive/negated behaviors, so a plain
+  ;; behavior contributed by two matching tags appears twice (BOT preserves this).
+  (is (= [:a :a]
+         (vec (r/tags->behaviors {:base [:a] :base.more [:a]}
+                                 behaviors {} [:base :base.more])))
+      "a plain behavior in two tags is NOT deduped"))
+
+(deftest equal-specificity-tiebreak-is-reverse-lexicographic
+  ;; both tags have one dotted segment; specificity-sort breaks the tie by string,
+  ;; descending (sort asc then reverse) → :bbb before :aaa → output [:x :y].
+  (is (= [:x :y]
+         (vec (r/tags->behaviors {:aaa [:x] :bbb [:y]}
+                                 {:x {:triggers [:t1]} :y {:triggers [:t1]}}
+                                 {} [:aaa :bbb])))
+      "equal-specificity tags order by reverse-lex tag string"))
+
+(deftest coll-form-behavior-refs-resolve-by-head-name
+  ;; a behavior ref can be [name & args]; it resolves via its head and passes through.
+  (is (= [[:a 1 2]]
+         (vec (r/tags->behaviors {:base [[:a 1 2]]} behaviors {} [:base])))
+      "coll-form ref passes through, looked up by head name"))
+
 (deftest triggers-groups-behaviors-by-declared-trigger
   (is (= {:t1 [:a :b] :t2 [:b :c]}
          (r/triggers behaviors [:a :b :c]))

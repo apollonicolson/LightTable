@@ -114,13 +114,14 @@
        ;; dispatch is the historical synchronous apply.
        (binding [*behavior-meta* meta]
          (dispatch/invoke beh obj args))
-       ;; tap> is the decomplected observation channel; the :object.behavior.time
-       ;; self-raise is retained for back-compat (public API; ::report-time).
-       (dispatch/observe-dispatched! {:behavior (:name beh) :trigger trigger :time time})
+       ;; tap> is the decomplected observation channel (opt-in; off by default so
+       ;; this hot path allocates nothing). The :object.behavior.time self-raise
+       ;; is retained for back-compat (public API; ::report-time).
+       (dispatch/observe-dispatched! (:name beh) trigger time)
        (when-not (= trigger :object.behavior.time)
          (raise obj :object.behavior.time r time trigger)))
        (catch :default e
-         (dispatch/observe-error! {:behavior (:name beh) :trigger trigger :error e})
+         (dispatch/observe-error! (:name beh) trigger e)
          (safe-report-error (str "Invalid behavior: " (:name beh)))
          (safe-report-error e))))))
 
