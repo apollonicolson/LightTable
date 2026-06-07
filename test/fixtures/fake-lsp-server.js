@@ -25,6 +25,11 @@ function handle(msg) {
            params: { uri, diagnostics: [
              { range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } },
                severity: 1, message: 'fake diagnostic' } ] } });
+  } else if (msg.method === 'textDocument/completion') {
+    send({ jsonrpc: '2.0', id: msg.id,
+           result: { isIncomplete: false, items: [
+             { label: 'defn', kind: 3, insertText: 'defn', sortText: '1' },
+             { label: 'def', kind: 3, insertText: 'def', sortText: '0' } ] } });
   } else if (msg.method === 'shutdown') {
     send({ jsonrpc: '2.0', id: msg.id, result: null });
   } else if (msg.method === 'exit') {

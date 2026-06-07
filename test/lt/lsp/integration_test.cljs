@@ -8,7 +8,8 @@
   (:require [cljs.test :refer-macros [deftest is async]]
             [defport.lsp.client :as lsp]
             [lt.lsp.node-transport :as nt]
-            [lt.lsp.service :as svc]))
+            [lt.lsp.service :as svc]
+            [lt.lsp.completion :as comp]))
 
 (deftest connect-handshake-sync-and-diagnostics
   (async done
@@ -38,3 +39,20 @@
 
                      :else (js/setTimeout #(poll (dec n)) 30)))]
            (poll 100)))))))
+
+(deftest completion-request-against-fake-server
+  (async done
+    (let [t   (nt/transport ["node" "test/fixtures/fake-lsp-server.js"])
+          s   (svc/create t)]
+      (lsp/connect-async!
+       (svc/client s) {:root-uri "file:///tmp"}
+       (fn [_client err]
+         (is (nil? err) "connected")
+         (svc/completion
+          s "file:///tmp/a.clj" 0 0
+          (fn [result]
+            (let [hints (vec (array-seq (comp/lsp-items->hints result)))]
+              (is (= ["def" "defn"] (map #(aget % "text") hints))
+                  "completion round-trips through the stack + maps + sorts by sortText")
+              (lsp/disconnect! (svc/client s))
+              (done)))))))))

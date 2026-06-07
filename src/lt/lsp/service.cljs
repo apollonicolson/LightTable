@@ -57,6 +57,14 @@
     (lsp/did-change! (:client service) uri version [{:text text}])
     service))
 
+(defn completion
+  "Request completion at LSP position {:line :character} (0-based) for `uri`.
+  Calls `(cb result)` with the raw LSP completion result, or `(cb nil)` on error."
+  [service uri line character cb]
+  (lsp/then (lsp/completion-at (:client service) uri line character)
+            (fn [result error] (cb (when-not error result))))
+  service)
+
 (defn doc-version [service uri]
   (get-in @(:docs service) [uri :version]))
 
