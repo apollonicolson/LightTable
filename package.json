@@ -5,7 +5,8 @@
   "scripts": {
     "test": "shadow-cljs compile test && node run-node-tests.cjs",
     "test:e2e": "shadow-cljs release app && playwright test editor.spec.js",
-    "test:e2e:parity": "shadow-cljs release app && playwright test editor-parity.spec.js"
+    "test:e2e:parity": "shadow-cljs release app && playwright test editor-parity.spec.js",
+    "scan:licenses": "node scripts/license-scan.cjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

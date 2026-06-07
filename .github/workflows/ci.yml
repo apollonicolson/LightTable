@@ -1,0 +1,61 @@
+# CI for the LightTable modernization fork: the same gates the local hooks run
+# (pre-commit clj-kondo, pre-push npm test) plus the license gate — on every push
+# and PR, so a clone without the hooks installed is still covered.
+#
+# Core job = node-test + lint + license-scan (fast, deterministic, no display).
+# The Electron E2E / parity suites need a real Electron + display and run locally
+# (npm run test:e2e / test:e2e:parity) — see HANDOVER.
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Set up JDK (shadow-cljs)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Cache Maven (shadow-cljs deps)
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: m2-${{ hashFiles('shadow-cljs.edn', 'deps.edn', 'project.clj') }}
+          restore-keys: m2-
+
+      - run: npm ci
+
+      - name: License gate (no strong copyleft in the build)
+        run: npm run scan:licenses
+
+      - name: Lint (clj-kondo)
+        uses: DeLaGuardo/setup-clj-kondo@master
+        with:
+          version: '2024.11.14'
+        # Scoped to the modernization namespaces (kept error-clean). The legacy
+        # LightTable tree has ~80 macro false-positives (defui/behavior/object*)
+        # that need a fuller clj-kondo macro config before it can be gated — a
+        # separate cleanup task, not a blocker for the new code.
+      - run: |
+          clj-kondo --lint \
+            src/lt/editor src/lt/object/resolve.cljs src/lt/object/dispatch.cljs \
+            test/lt/editor test/lt/object/resolve_test.cljs test/lt/object/dispatch_test.cljs
+          rc=$?
+          # 0 = clean, 2 = warnings (allowed). 3 = errors (fail).
+          [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]
+
+      - name: Node tests (jsdom)
+        run: npm test
