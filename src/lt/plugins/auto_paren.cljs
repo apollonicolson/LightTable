@@ -115,7 +115,7 @@
 
 (defn backspace-indent [ed]
   (if-not (or (editor/selection? ed)
-              (> (.-length (.getSelections (editor/->cm-ed ed))) 1))
+              (> (editor/selections-count ed) 1))
     (let [cursor (editor/->cursor ed)
           unit (editor/option ed :indentUnit)
           [indent rem] (pre-cursor-indent ed cursor)

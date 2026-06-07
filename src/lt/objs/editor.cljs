@@ -297,11 +297,26 @@
   (.setBookmark (->cm-ed e) (clj->js from) (clj->js widg)))
 
 (defn option
-  "Return value for option name `o` on editor `e`.
+  "Return value for option name `o` on editor `e`. CM6 has no flat getOption; the
+  few options consumers read (indent/tab) come from compartments/facets — return
+  sensible values so indent logic (auto_paren) works; unknown options → nil.
 
   See [getOption](http://codemirror.net/doc/manual.html#getOption)."
   [e o]
-  (.getOption (->cm-ed e) (name o)))
+  (if (cm6? e)
+    (case (keyword o)
+      :indentUnit 2
+      :indentWithTabs false
+      :tabSize 4
+      nil)
+    (.getOption (->cm-ed e) (name o))))
+
+(defn selections-count
+  "Number of cursors/selection ranges in editor `e` (multi-cursor count)."
+  [e]
+  (if (cm6? e)
+    (.. (cm6-view/view-state (->cm-ed e)) -selection -ranges -length)
+    (.-length (.getSelections (->cm-ed e)))))
 
 (defn set-mode
   "Set mode option for editor `e`.
@@ -531,7 +546,10 @@
 
   See [operation](http://codemirror.net/doc/manual.html#operation)."
   [e func]
-  (.operation (->cm-ed e) func)
+  ;; CM6 batches via transactions — no operation wrapper; just run the fn.
+  (if (cm6? e)
+    (func)
+    (.operation (->cm-ed e) func))
   e)
 
 (defn on-click
