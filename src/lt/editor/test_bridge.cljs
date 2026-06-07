@@ -18,6 +18,7 @@
             [lt.editor.cm6.results :as cm6-results]
             [lt.editor.cm6.view :as cm6-view]
             [lt.plugins.auto-complete :as ac]
+            [lt.lsp.connector :as lsp-conn]
             [lt.objs.tabs :as tabs])
   (:require-macros [lt.macros :refer [behavior]]))
 
@@ -118,6 +119,15 @@
                                       (editor/set-diagnostics e (js->clj diags :keywordize-keys true))) nil)
        :diagnosticCount (fn [] (when-let [e (ed)] (editor/diagnostic-count e)))
        :clearDiagnostics (fn [] (when-let [e (ed)] (editor/clear-diagnostics e)) nil)
+       ;; LSP connector seam (ADR 0010 slice 2d): configure a server (argv) and
+       ;; open the active editor as a doc — diagnostics then arrive FROM the
+       ;; server and render via the connector (no manual setDiagnostics).
+       :lspOpenActive (fn [argv uri]
+                        (when-let [e (ed)]
+                          (lsp-conn/configure! (js->clj argv))
+                          (lsp-conn/open! e uri "clojure" (editor/->val e)))
+                        nil)
+       :lspReset      (fn [] (lsp-conn/reset-all!) nil)
        ;; drive the full eval manager path (::inline-results etc.) on the active editor
        :evalResult    (fn [text line] (when-let [e (ed)] (object/raise e :editor.result text {:line line} {:type :inline})) nil)
        :evalException (fn [ex line] (when-let [e (ed)] (object/raise e :editor.exception ex {:line line})) nil)

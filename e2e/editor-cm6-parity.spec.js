@@ -350,3 +350,21 @@ test('CM6 live — LSP diagnostics render as decorations', async () => {
   expect(await lt('diagnosticCount')).toBe(0);
   expect(await win.locator('.cm-diag-error').count()).toBe(0);
 });
+
+// ADR 0010 slice 2d (live) — the FULL diagnostics vertical end-to-end in the real
+// app: the connector spawns a (fake) LSP server subprocess, completes the
+// initialize handshake, sends didOpen, and renders the server's publishDiagnostics
+// into the live editor. Nothing is pushed manually — the squiggle originates from
+// the server process. (Fake server = test/fixtures/fake-lsp-server.js, so no
+// clojure-lsp install is needed; swapping in the real binary is config only.)
+test('CM6 live — diagnostics from a (fake) LSP server via the connector', async () => {
+  const fakeServer = path.join(ROOT, 'test/fixtures/fake-lsp-server.js');
+  await lt('lspReset');
+  await lt('openCm6', '(ns a)');                       // a clojure doc, now active
+  await lt('lspOpenActive', ['node', fakeServer], 'file:///tmp/conn-a.clj');
+  // connector connects → didOpen → server replies publishDiagnostics → render,
+  // all async through a real subprocess.
+  await expect.poll(() => lt('diagnosticCount'), { timeout: 8000 }).toBeGreaterThan(0);
+  expect(await win.locator('.cm-diag-error').count()).toBeGreaterThanOrEqual(1);
+  await lt('lspReset');
+});

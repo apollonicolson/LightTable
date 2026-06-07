@@ -13,7 +13,7 @@
   Electron/Node; node-testable against a fake echo subprocess."
   (:require [defport.lsp.client :as lsp]
             [defport.transports.framing :as framing]
-            ["child_process" :as cp]))
+            [lt.util.broker :as broker]))
 
 (defn transport
   "A ClientTransport running `argv` as a subprocess. `opts` may carry :cwd.
@@ -26,9 +26,10 @@
                    :exited? false})]
      (reify lsp/ClientTransport
        (transport-start! [this]
-         (let [proc (cp/spawn (first argv)
-                              (clj->js (vec (rest argv)))
-                              #js {:cwd (:cwd opts) :stdio "pipe"})]
+         (let [proc (.spawn broker/child-process
+                            (first argv)
+                            (clj->js (vec (rest argv)))
+                            #js {:cwd (:cwd opts) :stdio "pipe"})]
            (swap! st assoc :proc proc)
            (.on (.-stdout proc) "data"
                 (fn [chunk]
