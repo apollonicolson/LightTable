@@ -33,10 +33,12 @@
 (defn make-state
   "Create an immutable CM6 EditorState seeded with document string `s`. The state
   carries the standard editor extensions (undo/redo history + a generation
-  counter) so the backend matches CM5's document semantics."
-  [s]
-  (.create EditorState #js {:doc s
-                            :extensions #js [(cm-history) generation-field]}))
+  counter) so the backend matches CM5's document semantics. `extra` is an optional
+  JS array of additional extensions (e.g. option compartments)."
+  ([s] (make-state s #js []))
+  ([s extra]
+   (.create EditorState #js {:doc s
+                             :extensions (.concat #js [(cm-history) generation-field] extra)})))
 
 (defn doc-string
   "The document text of `state`."

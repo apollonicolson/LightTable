@@ -24,6 +24,7 @@
 (def ^:private EditorView (.-EditorView cm-view))
 (def ^:private cm-undo (.-undo cm-commands))
 (def ^:private cm-redo (.-redo cm-commands))
+(def ^:private isolate-history (.-isolateHistory cm-commands))
 
 (defn create-view
   "Build an EditorView. `parent` (a DOM element) is optional — when nil the view
@@ -84,9 +85,15 @@
 (defn select-all! [view]
   (dispatch! view #js {:selection #js {:anchor 0 :head (cm6/doc-length (view-state view))}}))
 
-(defn set-val! [view s]
+(defn set-val!
+  "Replace the whole document and reset the cursor. Annotated as a history
+  boundary (CM5 `make` pairs setValue with clearHistory) so a later edit's undo
+  stops here rather than merging across — while PRESERVING the view's extensions/
+  option compartments (unlike set-state!)."
+  [view s]
   (dispatch! view #js {:changes #js {:from 0 :to (cm6/doc-length (view-state view)) :insert s}
-                       :selection #js {:anchor 0}}))
+                       :selection #js {:anchor 0}
+                       :annotations (.of isolate-history "full")}))
 
 (defn insert-at-cursor! [view text]
   (let [off (cm6/cursor-offset (view-state view))]

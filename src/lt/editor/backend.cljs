@@ -68,10 +68,9 @@
 (deftype Cm6Backend [view]
   IEditorBackend
   (-value [_] (cm6/doc-string (view/view-state view)))
-  ;; set-val is a reseed: replace the whole doc AND reset history (CM5 `make`
-  ;; pairs setValue with clearHistory), so a later edit's undo stops at this
-  ;; baseline rather than merging across it.
-  (-set-val [_ v] (view/set-state! view (cm6/make-state (or v ""))))
+  ;; set-val reseeds the doc and isolates history (so a later edit's undo stops
+  ;; here) while preserving the view's extensions/option compartments.
+  (-set-val [_ v] (view/set-val! view (or v "")))
   (-cursor [_ side] (let [st (view/view-state view)
                           m (.. st -selection -main)
                           off (case side

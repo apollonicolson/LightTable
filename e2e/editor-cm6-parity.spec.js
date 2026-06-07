@@ -81,3 +81,14 @@ test('CM6 live — history (undo / redo)', async () => {
   await lt('redo');
   expect(await lt('val')).toBe('abXYZ\ncde\nf');
 });
+
+test('CM6 live — set-options via compartments (lineNumbers toggles, preserves doc)', async () => {
+  const gutter = () => win.evaluate(() => !!document.querySelector('.cm-lineNumbers'));
+  expect(await gutter()).toBe(false);
+  await lt('setOptions', { lineNumbers: true });
+  expect(await gutter()).toBe(true);
+  // reconfiguring an option does NOT disturb the document
+  expect(await lt('val')).toBe('ab\ncde\nf');
+  await lt('setOptions', { lineNumbers: false });
+  expect(await gutter()).toBe(false);
+});

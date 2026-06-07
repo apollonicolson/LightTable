@@ -30,6 +30,7 @@
        :backendKind (fn [] (when-let [e (ed)] (name (or (:backend-kind @e) :cm5))))
        :val      (fn [] (when-let [e (ed)] (editor/->val e)))
        :setVal   (fn [v] (when-let [e (ed)] (editor/set-val e v)) nil)
+       :setOptions (fn [opts] (when-let [e (ed)] (editor/set-options e (js->clj opts :keywordize-keys true))) nil)
        :cursor   (fn [] (when-let [e (ed)] (clj->js (editor/->cursor e))))
        :moveCursor (fn [pos] (when-let [e (ed)] (editor/move-cursor e (js-pos pos))) nil)
        :lineCount (fn [] (when-let [e (ed)] (editor/line-count e)))

@@ -21,6 +21,8 @@
             [lt.objs.context :as ctx-obj]
             [lt.editor.backend :as be]
             [lt.editor.cm6.view :as cm6-view]
+            [lt.editor.cm6 :as cm6]
+            [lt.editor.cm6.options :as cm6-options]
             [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
@@ -79,12 +81,19 @@
   "Given a map of options, set each pair as an option on editor `e`'s
   CodeMirror object. Returns `e`."
   [e m]
-  ;; CM6 has no setOption — its equivalents are extensions/compartments (a later
-  ;; capability slice). No-op for CM6 so the :object.instant option behaviors
-  ;; (wrap/line-numbers/fold/tabs) don't crash a CM6 editor.
-  (when-not (cm6? e)
-    (doseq [[k v] m]
-      (.setOption (->cm-ed e) (name k) v)))
+  (cond
+    ;; CM6 editor object: reconfigure its option compartments (the unified CM6
+    ;; mechanism). Unknown options are ignored by reconfigure!.
+    (cm6? e)
+    (cm6-options/reconfigure! (->cm-ed e) (:cm6-compartments @e) m)
+    ;; CM5 (object or raw instance): the flat setOption. A raw CM6 view (some
+    ;; behaviors pass (:ed @obj)) has no setOption → safely skipped; its options
+    ;; come through the object path above.
+    :else
+    (let [cm (->cm-ed e)]
+      (when (.-setOption cm)
+        (doseq [[k v] m]
+          (.setOption cm (name k) v)))))
   e)
 
 (defn clear-history
@@ -772,10 +781,14 @@
                    ;; CM6-backed editor (M5): a detached EditorView; its .dom is the
                    ;; tab element. CM5 event wiring is skipped (CM6 events are a later
                    ;; capability slice); the seam drives it via :backend.
-                   (let [view (cm6-view/create-view nil {:doc (or (:content info) "")})]
+                   (let [compartments (cm6-options/make-compartments)
+                         state (cm6/make-state (or (:content info) "")
+                                               (cm6-options/initial-extensions compartments))
+                         view (cm6-view/create-view nil {:state state})]
                      (object/merge! obj {:ed view
                                          :backend (be/cm6-backend view)
                                          :backend-kind :cm6
+                                         :cm6-compartments compartments
                                          :info (dissoc info :content :doc)})
                      ;; Minimal CM6 event wiring: focus/blur on the contenteditable
                      ;; drive the standard :focus→:active / :blur→:inactive chain
