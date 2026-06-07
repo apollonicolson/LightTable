@@ -29,6 +29,7 @@
             [lt.editor.cm6.find :as cm6-find]
             [lt.editor.cm6.results :as cm6-results]
             [lt.editor.cm6.watches :as cm6-watches]
+            [lt.editor.cm6.diagnostics :as cm6-diagnostics]
             [lt.editor.cm6.fold :as cm6-fold]
             [lt.object :as object]
             [lt.objs.files :as files]
@@ -428,6 +429,24 @@
   [e id]
   (cm6-watches/remove! (->cm-ed e) id))
 
+;; LSP diagnostics seam (ADR 0010): render a server's publishDiagnostics into the
+;; editor's diagnostics decoration layer. `diagnostics` is a vector of LSP
+;; Diagnostic maps ({:range {:start/:end {:line :character}} :severity :message}).
+(defn set-diagnostics
+  "Replace the editor's rendered diagnostics. Returns the count."
+  [e diagnostics]
+  (cm6-diagnostics/set-diagnostics! (->cm-ed e) diagnostics))
+
+(defn clear-diagnostics
+  "Remove all rendered diagnostics from editor `e`."
+  [e]
+  (cm6-diagnostics/clear! (->cm-ed e)))
+
+(defn diagnostic-count
+  "Number of diagnostics currently rendered in editor `e`."
+  [e]
+  (cm6-diagnostics/count-diagnostics (cm6-view/view-state (->cm-ed e))))
+
 (defn line
   "Returns the content of line `l` from editor `e`.
 
@@ -667,6 +686,7 @@
                                            (:field cm6-find/layer)
                                            (:field cm6-results/layer)
                                            (:field cm6-watches/layer)
+                                           (:field cm6-diagnostics/layer)
                                            (cm6-fold/extension)
                                            (cm6-modes/initial lang-compartment (:mime info))])
                        ;; Seed from :content (transient editors) or, for a file editor,

@@ -112,6 +112,12 @@
        :resultCount   (fn [] (when-let [e (ed)]
                                (cm6-results/count-results (editor/->cm-ed e))))
        :removeResult  (fn [id block?] (when-let [e (ed)] (editor/remove-result-widget e (keyword id) (boolean block?))) nil)
+       ;; LSP diagnostics seam (ADR 0010): push LSP diagnostics onto the active
+       ;; editor + read back the rendered count (the live cm6.diagnostics layer).
+       :setDiagnostics  (fn [diags] (when-let [e (ed)]
+                                      (editor/set-diagnostics e (js->clj diags :keywordize-keys true))) nil)
+       :diagnosticCount (fn [] (when-let [e (ed)] (editor/diagnostic-count e)))
+       :clearDiagnostics (fn [] (when-let [e (ed)] (editor/clear-diagnostics e)) nil)
        ;; drive the full eval manager path (::inline-results etc.) on the active editor
        :evalResult    (fn [text line] (when-let [e (ed)] (object/raise e :editor.result text {:line line} {:type :inline})) nil)
        :evalException (fn [ex line] (when-let [e (ed)] (object/raise e :editor.exception ex {:line line})) nil)

@@ -322,3 +322,31 @@ test('CM6 live — flip: default editor is CM6', async () => {
   expect(await lt('backendKind')).toBe('cm6');         // CM6 is the default backend
   expect(await lt('val')).toBe('default editor');
 });
+
+// ADR 0010 slice 1+2c — LSP diagnostics RENDER as live CM6 decorations. Proves
+// the slice-1 renderer (cm6.diagnostics), node-tested in isolation, actually
+// squiggles in the real editor: the layer is in the live extensions, the seam
+// maps LSP 0-based {line,character} ranges to marks, and the severity classes
+// reach the DOM. (Server-agnostic — pushed via the bridge, same shape defport's
+// publishDiagnostics delivers.)
+test('CM6 live — LSP diagnostics render as decorations', async () => {
+  // active editor value is 'ab\ncde\nf' (beforeEach).
+  const diags = [
+    { range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } },
+      severity: 1, message: 'error on ab' },
+    { range: { start: { line: 1, character: 0 }, end: { line: 1, character: 3 } },
+      severity: 2, message: 'warning on cde' },
+  ];
+  await lt('setDiagnostics', diags);
+  expect(await lt('diagnosticCount')).toBe(2);                 // both rendered
+  // the severity classes reach the live DOM as real decorations
+  expect(await win.locator('.cm-diag-error').count()).toBeGreaterThanOrEqual(1);
+  expect(await win.locator('.cm-diag-warning').count()).toBeGreaterThanOrEqual(1);
+  // republish replaces (LSP semantics) — one diagnostic now
+  await lt('setDiagnostics', [diags[0]]);
+  expect(await lt('diagnosticCount')).toBe(1);
+  // clear removes all decorations
+  await lt('clearDiagnostics');
+  expect(await lt('diagnosticCount')).toBe(0);
+  expect(await win.locator('.cm-diag-error').count()).toBe(0);
+});
