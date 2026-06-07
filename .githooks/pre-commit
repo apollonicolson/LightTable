@@ -1,0 +1,12 @@
+#!/bin/sh
+# Fast (<1s) lint of staged Clojure files. Errors block the commit; warnings do
+# NOT (keeps the hook quick so nobody reaches for --no-verify). clj-kondo exit:
+# 0 = clean, 2 = warnings, 3 = errors.
+files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.clj[cs]?$' || true)
+[ -z "$files" ] && exit 0
+command -v clj-kondo >/dev/null 2>&1 || { echo "pre-commit: clj-kondo not found, skipping"; exit 0; }
+clj-kondo --lint $files
+rc=$?
+if [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]; then exit 0; fi
+echo "pre-commit: clj-kondo errors (rc=$rc). Fix, or 'git commit --no-verify' to bypass."
+exit 1

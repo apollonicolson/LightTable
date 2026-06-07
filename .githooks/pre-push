@@ -1,0 +1,5 @@
+#!/bin/sh
+# Run the jsdom node-test suite before pushing (~5s — too slow for per-commit,
+# right for per-push). Bypass with 'git push --no-verify' if needed.
+echo "pre-push: npm test"
+npm test --silent
