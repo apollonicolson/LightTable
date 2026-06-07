@@ -10,6 +10,8 @@
 
   This namespace is slice 1: the import + state-model proof. The EditorView (DOM,
   needs a browser-test) and the lt.objs.editor delegation are later slices."
+  ;; `replace` matches the lt.objs.editor seam name (shadows cljs.core/replace).
+  (:refer-clojure :exclude [replace])
   (:require ["@codemirror/state" :as cm-state]))
 
 (def ^:private EditorState (.-EditorState cm-state))
