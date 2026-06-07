@@ -93,6 +93,16 @@ test('CM6 live — keymap (real keyboard editing: typing / Enter / Backspace)', 
   expect(await lt('val')).toBe('abc\n');       // defaultKeymap: Backspace deletes
 });
 
+test('CM6 live — modes (set-mode applies Lezer syntax highlighting)', async () => {
+  await lt('setVal', 'function foo() { return 42; }');
+  const spans = () => win.evaluate(() => document.querySelectorAll('.cm-content .cm-line span').length);
+  expect(await spans()).toBe(0);              // no language → plain text, no token spans
+  await lt('setMode', 'javascript');
+  await win.waitForFunction(() => document.querySelectorAll('.cm-content .cm-line span').length > 0);
+  expect(await spans()).toBeGreaterThan(0);   // Lezer JS highlighting wraps tokens
+  expect(await lt('val')).toBe('function foo() { return 42; }'); // doc undisturbed
+});
+
 test('CM6 live — events (edits raise :change to LightTable behaviors)', async () => {
   const before = await lt('changeCount');
   await lt('replace', { line: 0, ch: 0 }, { line: 0, ch: 0 }, 'Q');

@@ -23,6 +23,7 @@
             [lt.editor.cm6.view :as cm6-view]
             [lt.editor.cm6 :as cm6]
             [lt.editor.cm6.options :as cm6-options]
+            [lt.editor.cm6.modes :as cm6-modes]
             [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
@@ -285,7 +286,9 @@
 
   See [getOption](http://codemirror.net/doc/manual.html#getOption)."
   [e m]
-  (.setOption (->cm-ed e) "mode" m)
+  (if (cm6? e)
+    (cm6-modes/set-mode! (->cm-ed e) (:cm6-language @e) m)
+    (.setOption (->cm-ed e) "mode" m))
   e)
 
 (defn ->mode
@@ -782,6 +785,7 @@
                    ;; tab element. CM5 event wiring is skipped (CM6 events are a later
                    ;; capability slice); the seam drives it via :backend.
                    (let [compartments (cm6-options/make-compartments)
+                         lang-compartment (cm6-modes/make-compartment)
                          ;; CM6's single updateListener → the LightTable :change/:move
                          ;; triggers (vs CM5's per-event .on wiring).
                          events (cm6-view/update-listener
@@ -789,13 +793,17 @@
                                     (when (.-docChanged update) (object/raise obj :change update))
                                     (when (.-selectionSet update) (object/raise obj :move update))))
                          extra (.concat (cm6-options/initial-extensions compartments)
-                                        #js [events cm6-view/editing-keymap])
+                                        #js [events
+                                             cm6-view/editing-keymap
+                                             cm6-modes/syntax-highlighting
+                                             (cm6-modes/initial lang-compartment (:mime info))])
                          state (cm6/make-state (or (:content info) "") extra)
                          view (cm6-view/create-view nil {:state state})]
                      (object/merge! obj {:ed view
                                          :backend (be/cm6-backend view)
                                          :backend-kind :cm6
                                          :cm6-compartments compartments
+                                         :cm6-language lang-compartment
                                          :info (dissoc info :content :doc)})
                      ;; Minimal CM6 event wiring: focus/blur on the contenteditable
                      ;; drive the standard :focus→:active / :blur→:inactive chain
