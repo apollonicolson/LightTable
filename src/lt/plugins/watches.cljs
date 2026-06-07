@@ -7,9 +7,9 @@
   (:require-macros [lt.macros :refer [behavior]]))
 
 (defn inline [this opts loc]
-  (let [ed (:ed @this)
-        type (or (:type opts) :inline)
-        line (ed/line-handle ed (:line loc))
+  (let [type (or (:type opts) :inline)
+        ;; CM6 has no line handles → key by line number (mirrors eval's manager).
+        line (if (ed/cm6? this) (:line loc) (ed/line-handle this (:line loc)))
         res-obj (object/create :lt.objs.eval/inline-result {:ed this
                                                             :class (or (:class opts) (name type))
                                                             :opts opts
@@ -18,6 +18,13 @@
     (object/add-tags res-obj [:inline.watch])
     (object/update! this [:widgets] assoc [line type] res-obj)
     res-obj))
+
+(defn- pos<= [a b]
+  (or (< (:line a) (:line b))
+      (and (= (:line a) (:line b)) (<= (:ch a) (:ch b)))))
+
+(defn- within? [cur {:keys [from to]}]
+  (and from to (pos<= from cur) (pos<= cur to)))
 
 ;; src->watch param removed: it was always ignored here (source transformation
 ;; runs through the :watch.src+ / :watch.custom.src+ raise-reduce below), and its
@@ -28,13 +35,15 @@
         range (when start
                 (ed/mark doc start (update-in end [:ch] inc) {:inclusiveLeft true :inclusiveRight true}))
         ;;add watch ranges
+        ;; Watch positions come from the backend-aware seam (CM5 marker .find / CM6
+        ;; tracked-range); the transform still runs in a headless CM5 Doc, which is
+        ;; independent of the editor backend.
         watches (doall (filter identity
                                (for [[id watch] (:watches @ed)
-                                     :let [watch (:mark watch)
-                                           pos (.find watch)
-                                           mark (when pos (ed/mark doc (.-from pos) (.-to pos) {:className "watched"}))]]
+                                     :let [pos (ed/watch-mark-bounds ed (:handle watch))
+                                           mark (when pos (ed/mark doc (:from pos) (:to pos) {:className "watched"}))]]
                                  (when mark
-                                   (set! (.-custom mark) (.-custom watch))
+                                   (set! (.-custom mark) (:custom watch))
                                    (set! (.-ltwatchid mark) id)
                                    mark))))]
     ;;replace watched ranges with code
@@ -57,7 +66,8 @@
           :reaction (fn [inline-watch]
                       (let [ed (-> @inline-watch :ed)
                             id (-> @inline-watch :opts :id)]
-                        (.clear (-> @ed :watches (get id) :mark))
+                        (when-let [w (-> @ed :watches (get id))]
+                          (ed/clear-watch-mark ed (:handle w)))
                         (object/update! ed [:watches] dissoc id)
                         (object/raise ed :unwatch))))
 
@@ -67,16 +77,18 @@
                       (when-let [sel (ed/selection-bounds this)]
                         (let [id (-> (gensym "watch")
                                      (str))
-                              mark (ed/mark this (:from sel) (:to sel) {:className (or (:class opts) "watched")
-                                                                        :inclusiveLeft false
-                                                                        :inclusiveRight false})
+                              handle (ed/add-watch-mark this (:from sel) (:to sel))
                               res (inline this (merge {:type :watch :id id} opts) (:to sel))]
-                          (.on mark "hide" (fn []
-                                             (object/raise res :clear!)))
-                          (set! (.-custom mark) (when (:exp opts) opts))
-                          (set! (.-lttype mark) :watch)
-                          (set! (.-ltwatchid mark) id)
-                          (object/update! this [:watches] assoc id {:mark mark
+                          ;; CM5: the marker's "hide" event clears on text-delete + the
+                          ;; metadata lives on the marker. CM6: metadata lives in the
+                          ;; :watches map; collapse-cleanup is a deferred refinement.
+                          (when-not (ed/cm6? this)
+                            (.on handle "hide" (fn [] (object/raise res :clear!)))
+                            (set! (.-custom handle) (when (:exp opts) opts))
+                            (set! (.-lttype handle) :watch)
+                            (set! (.-ltwatchid handle) id))
+                          (object/update! this [:watches] assoc id {:handle handle
+                                                                    :custom (when (:exp opts) opts)
                                                                     :inline-result res})
                           (object/raise this :watch)))))
 
@@ -84,9 +96,11 @@
           :triggers #{:unwatch!}
           :reaction (fn [this]
                       (when-let [cur (ed/->cursor this)]
-                        (doseq [mark (ed/find-marks this cur)
-                                :when (= (.-lttype mark) :watch)]
-                          (object/raise (-> @this :watches (get (.-ltwatchid mark)) :inline-result) :clear!)))))
+                        ;; find the watch whose range contains the cursor (replaces the
+                        ;; CM5 find-marks-at + .lttype filter; works on both backends).
+                        (doseq [[_ w] (:watches @this)
+                                :when (within? cur (ed/watch-mark-bounds this (:handle w)))]
+                          (object/raise (:inline-result w) :clear!)))))
 
 (behavior ::eval-on-watch-or-unwatch
           :triggers #{:unwatch :watch}

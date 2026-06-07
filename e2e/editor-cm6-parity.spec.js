@@ -260,3 +260,19 @@ test('CM6 live — auto-complete (token extraction + hint popup, no inner-mode c
   expect(await lt('hintActive')).toBe(true);          // popup opened, no crash
   await lt('execCommand', 'esc');                       // cleanup (best-effort)
 });
+
+// ADR 0009 — watches on CM6: watch-selection highlights a range (cm6.watches
+// layer) + an inline result; unwatch-at-cursor finds the watch by tracked range.
+test('CM6 live — watches (highlight + inline result, unwatch by range)', async () => {
+  await lt('setVal', '(+ 1 2)');
+  await lt('setMode', 'clojure');
+  await lt('setSelection', { line: 0, ch: 0 }, { line: 0, ch: 7 });
+  await lt('watch');
+  expect(await lt('watchCount')).toBe(1);
+  await win.waitForFunction(() => document.querySelectorAll('.watched').length > 0);
+  expect(await win.evaluate(() => document.querySelectorAll('.watched').length)).toBeGreaterThan(0);
+  // unwatch with the cursor inside the watched range
+  await lt('moveCursor', { line: 0, ch: 3 });
+  await lt('unwatchAtCursor');
+  expect(await lt('watchCount')).toBe(0);
+});

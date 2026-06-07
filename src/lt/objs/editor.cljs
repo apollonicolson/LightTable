@@ -28,6 +28,7 @@
             [lt.editor.cm6.comment :as cm6-comment]
             [lt.editor.cm6.find :as cm6-find]
             [lt.editor.cm6.results :as cm6-results]
+            [lt.editor.cm6.watches :as cm6-watches]
             [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
@@ -592,6 +593,38 @@
     (cm6-results/present? (->cm-ed e) handle)
     (boolean (.find handle))))
 
+;; Watch-mark seam (ADR 0009). A "watch handle" abstracts a CM5 TextMarker and a
+;; CM6 watches-layer decoration id. Watch metadata (custom expr) lives in the
+;; watches plugin's own :watches map, so the handle only tracks the highlight range.
+(defn add-watch-mark
+  "Mark range [from, to) ({:line :ch}) as a watch highlight. Returns the handle."
+  [e from to]
+  (if (cm6? e)
+    (let [v (->cm-ed e)
+          st (cm6-view/view-state v)
+          id (keyword (str "lt-watch-" (gensym)))]
+      (cm6-watches/add! v id (cm6/pos->offset st from) (cm6/pos->offset st to)))
+    (mark e from to {:className "watched" :inclusiveLeft false :inclusiveRight false})))
+
+(defn watch-mark-bounds
+  "Current {:from {:line :ch} :to {:line :ch}} of watch `handle`, or nil if gone."
+  [e handle]
+  (if (cm6? e)
+    (let [v (->cm-ed e)
+          st (cm6-view/view-state v)]
+      (when-let [r (cm6-watches/bounds v handle)]
+        {:from (cm6/offset->pos st (:from r)) :to (cm6/offset->pos st (:to r))}))
+    (when-let [p (.find handle)]
+      {:from {:line (.. p -from -line) :ch (.. p -from -ch)}
+       :to   {:line (.. p -to -line) :ch (.. p -to -ch)}})))
+
+(defn clear-watch-mark
+  "Remove watch highlight `handle`."
+  [e handle]
+  (if (cm6? e)
+    (cm6-watches/remove! (->cm-ed e) handle)
+    (.clear handle)))
+
 (defn line
   "Returns the content of line `l` from editor `e`.
 
@@ -927,6 +960,7 @@
                                              cm6-modes/syntax-highlighting
                                              (:field cm6-find/layer)
                                              (:field cm6-results/layer)
+                                             (:field cm6-watches/layer)
                                              (cm6-modes/initial lang-compartment (:mime info))])
                          state (cm6/make-state (or (:content info) "") extra)
                          view (cm6-view/create-view nil {:state state})]

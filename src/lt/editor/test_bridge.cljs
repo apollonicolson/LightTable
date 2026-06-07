@@ -105,7 +105,12 @@
                                   (object/merge! e {(keyword "lt.plugins.auto-complete" "hints")
                                                     (clj->js (mapv (fn [w] {:completion w}) words))})) nil)
        :showHint    (fn [] (when-let [e (ed)] (object/raise e :hint {:force? true})) nil)
-       :hintActive  (fn [] (boolean (:active @ac/hinter)))})
+       :hintActive  (fn [] (boolean (:active @ac/hinter)))
+       ;; watches: ensure the :watchable tag (watch behaviors bind to it), then drive
+       ;; the watch/unwatch commands. watchCount reads the editor's :watches map.
+       :watch          (fn [] (when-let [e (ed)] (object/add-tags e [:watchable]) (object/raise e :watch!)) nil)
+       :unwatchAtCursor (fn [] (when-let [e (ed)] (object/raise e :unwatch!)) nil)
+       :watchCount     (fn [] (when-let [e (ed)] (count (:watches @e))))})
 
 (defn install!
   "Expose the editor seam on window.__lt_test when LT_TEST_BRIDGE is set. No-op
