@@ -4,7 +4,8 @@
   "description": "Build tooling (shadow-cljs) for the LightTable CLJS renderer.",
   "scripts": {
     "test": "shadow-cljs compile test && node run-node-tests.cjs",
-    "test:e2e": "shadow-cljs release app && playwright test"
+    "test:e2e": "shadow-cljs release app && playwright test editor.spec.js",
+    "test:e2e:parity": "shadow-cljs release app && playwright test editor-parity.spec.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

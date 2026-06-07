@@ -13,6 +13,7 @@
             [lt.objs.context :as ctx]
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool]
+            [lt.editor.test-bridge :as test-bridge]
             [lt.objs.keyboard :as keyboard]
             [lt.objs.notifos :as notifos]
             [lt.objs.clients.devtools :as devtools]
@@ -30,6 +31,10 @@
 ;; lt.objs.app/init() runs (the splash-only / dead-UI bug). window.lttools is
 ;; still reachable as the bare global `lttools` from the devtools console.
 (set! js/window.lttools utils)
+
+;; Expose the editor seam for the CM6 parity suite — no-op unless LT_TEST_BRIDGE
+;; is set (see lt.editor.test-bridge). Never active in a normal run.
+(test-bridge/install!)
 
 (defn check-http [url]
   (if (and (= (.indexOf url "http") -1)

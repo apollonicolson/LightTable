@@ -1,0 +1,8 @@
+;; clj-kondo config for the LightTable fork.
+;;
+;; `lt.macros/defui` (a singultus-backed UI-element macro) defines a named var
+;; from `(defui name [bindings] body…)`, but clj-kondo can't see through the
+;; macro and reports the defined name + its bindings as unresolved symbols.
+;; Linting it as `defn` makes the name a def and the bindings params — removing
+;; the false-positive "Unresolved symbol" errors without hiding real ones.
+{:lint-as {lt.macros/defui clojure.core/defn}}
