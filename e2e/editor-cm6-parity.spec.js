@@ -82,6 +82,12 @@ test('CM6 live — history (undo / redo)', async () => {
   expect(await lt('val')).toBe('abXYZ\ncde\nf');
 });
 
+test('CM6 live — events (edits raise :change to LightTable behaviors)', async () => {
+  const before = await lt('changeCount');
+  await lt('replace', { line: 0, ch: 0 }, { line: 0, ch: 0 }, 'Q');
+  expect(await lt('changeCount')).toBeGreaterThan(before);
+});
+
 test('CM6 live — set-options via compartments (lineNumbers toggles, preserves doc)', async () => {
   const gutter = () => win.evaluate(() => !!document.querySelector('.cm-lineNumbers'));
   expect(await gutter()).toBe(false);

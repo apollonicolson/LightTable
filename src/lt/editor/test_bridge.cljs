@@ -10,11 +10,20 @@
   OFF by default. `install!` is a no-op unless `process.env.LT_TEST_BRIDGE` is
   set — it never ships behavior into a normal run. Every fn operates on the
   active editor (`pool/last-active`) and speaks JS-friendly values."
-  (:require [lt.objs.editor :as editor]
+  (:require [lt.object :as object]
+            [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool]
-            [lt.objs.tabs :as tabs]))
+            [lt.objs.tabs :as tabs])
+  (:require-macros [lt.macros :refer [behavior]]))
 
 (defn- ed [] (pool/last-active))
+
+;; Proves the CM6 updateListener actually drives LightTable behaviors: counts
+;; :change raises on the editor object (attached in openCm6).
+(behavior ::count-changes
+          :triggers #{:change}
+          :reaction (fn [this & _]
+                      (object/update! this [::change-count] (fnil inc 0))))
 
 (defn- js-pos [p] (js->clj p :keywordize-keys true))
 
@@ -24,10 +33,12 @@
        ;; parity assertions run against a LIVE CM6 editor (the ADR 0008 swap check).
        :openCm6  (fn [content]
                    (let [e (pool/create {:backend :cm6 :content (or content "")})]
+                     (object/add-behavior! e ::count-changes)
                      (tabs/add! e)
                      (tabs/active! e)
                      (boolean e)))
        :backendKind (fn [] (when-let [e (ed)] (name (or (:backend-kind @e) :cm5))))
+       :changeCount (fn [] (when-let [e (ed)] (::change-count @e 0)))
        :val      (fn [] (when-let [e (ed)] (editor/->val e)))
        :setVal   (fn [v] (when-let [e (ed)] (editor/set-val e v)) nil)
        :setOptions (fn [opts] (when-let [e (ed)] (editor/set-options e (js->clj opts :keywordize-keys true))) nil)

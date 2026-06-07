@@ -108,3 +108,10 @@
 
 (defn undo! "Undo on the live view (no-op if no history)." [view] (cm-undo view) view)
 (defn redo! "Redo on the live view (no-op if nothing to redo)." [view] (cm-redo view) view)
+
+(defn update-listener
+  "An extension that calls `(on-update update)` on every view update — CM6's
+  single unified event hook (vs CM5's many .on(name) handlers). The caller maps
+  update.docChanged/selectionSet to the LightTable :change/:move triggers."
+  [on-update]
+  (.of (.-updateListener EditorView) on-update))

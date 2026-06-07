@@ -782,8 +782,14 @@
                    ;; tab element. CM5 event wiring is skipped (CM6 events are a later
                    ;; capability slice); the seam drives it via :backend.
                    (let [compartments (cm6-options/make-compartments)
-                         state (cm6/make-state (or (:content info) "")
-                                               (cm6-options/initial-extensions compartments))
+                         ;; CM6's single updateListener → the LightTable :change/:move
+                         ;; triggers (vs CM5's per-event .on wiring).
+                         events (cm6-view/update-listener
+                                  (fn [update]
+                                    (when (.-docChanged update) (object/raise obj :change update))
+                                    (when (.-selectionSet update) (object/raise obj :move update))))
+                         extra (.concat (cm6-options/initial-extensions compartments) #js [events])
+                         state (cm6/make-state (or (:content info) "") extra)
                          view (cm6-view/create-view nil {:state state})]
                      (object/merge! obj {:ed view
                                          :backend (be/cm6-backend view)
