@@ -54,11 +54,9 @@
   (and (satisfies? IDeref e) (= :cm6 (:backend-kind @e))))
 
 (defn ->elem
-  "Return DOM element of editor `e`'s CodeMirror object"
+  "Return the editor's outer DOM element (the CM6 view's .dom)."
   [e]
-  (if (cm6? e)
-    (cm6-view/dom (->cm-ed e))
-    (.-parentElement (.getScrollerElement (->cm-ed e)))))
+  (cm6-view/dom (->cm-ed e)))
 
 (defn backend
   "The Cm6Backend for editor `e` (ADR 0009). An editor object carries an explicit
@@ -69,15 +67,10 @@
     (be/cm6-backend (->cm-ed e))))
 
 (defn exec-command
-  "Run a named editor command and return whether it was HANDLED — CM6: the
-  StateCommand's boolean; CM5: not CodeMirror.Pass. `args` apply to CM5 only (CM6
-  StateCommands take just the view). The seam behind pool.cljs's command bindings
-  (ADR 0009), so consumers never touch CM directly."
-  [e command & args]
-  (if (cm6? e)
-    (cm6-commands/run (->cm-ed e) command)
-    (when-let [f (aget (.-commands js/CodeMirror) (name command))]
-      (not= js/CodeMirror.Pass (apply f (->cm-ed e) args)))))
+  "Run a named editor command, returning whether it was HANDLED (the CM6
+  StateCommand's boolean). The seam behind pool.cljs's command bindings (ADR 0009)."
+  [e command & _args]
+  (cm6-commands/run (->cm-ed e) command))
 
 (defn cmd
   "Run a named editor command on `e` (cursor motion / edit). Returns `e`."
@@ -100,22 +93,11 @@
     (be/-move-cursor b cursor)))
 
 (defn set-options
-  "Given a map of options, set each pair as an option on editor `e`'s
-  CodeMirror object. Returns `e`."
+  "Reconfigure editor `e`'s CM6 option compartments from map `m` (unknown options
+  are ignored by reconfigure!). A bare view with no :cm6-compartments is skipped."
   [e m]
-  (cond
-    ;; CM6 editor object: reconfigure its option compartments (the unified CM6
-    ;; mechanism). Unknown options are ignored by reconfigure!.
-    (cm6? e)
-    (cm6-options/reconfigure! (->cm-ed e) (:cm6-compartments @e) m)
-    ;; CM5 (object or raw instance): the flat setOption. A raw CM6 view (some
-    ;; behaviors pass (:ed @obj)) has no setOption → safely skipped; its options
-    ;; come through the object path above.
-    :else
-    (let [cm (->cm-ed e)]
-      (when (.-setOption cm)
-        (doseq [[k v] m]
-          (.setOption cm (name k) v)))))
+  (when (and (satisfies? IDeref e) (:cm6-compartments @e))
+    (cm6-options/reconfigure! (->cm-ed e) (:cm6-compartments @e) m))
   e)
 
 (defn clear-history
@@ -253,35 +235,24 @@
   (.setBookmark (->cm-ed e) (clj->js from) (clj->js widg)))
 
 (defn option
-  "Return value for option name `o` on editor `e`. CM6 has no flat getOption; the
-  few options consumers read (indent/tab) come from compartments/facets — return
-  sensible values so indent logic (auto_paren) works; unknown options → nil.
-
-  See [getOption](http://codemirror.net/doc/manual.html#getOption)."
-  [e o]
-  (if (cm6? e)
-    (case (keyword o)
-      :indentUnit 2
-      :indentWithTabs false
-      :tabSize 4
-      nil)
-    (.getOption (->cm-ed e) (name o))))
+  "Value for option `o`. CM6 has no flat getOption; the few options consumers read
+  (indent/tab) come back as sensible defaults so indent logic works; else nil."
+  [_e o]
+  (case (keyword o)
+    :indentUnit 2
+    :indentWithTabs false
+    :tabSize 4
+    nil))
 
 (defn selections-count
   "Number of cursors/selection ranges in editor `e` (multi-cursor count)."
   [e]
-  (if (cm6? e)
-    (.. (cm6-view/view-state (->cm-ed e)) -selection -ranges -length)
-    (.-length (.getSelections (->cm-ed e)))))
+  (.. (cm6-view/view-state (->cm-ed e)) -selection -ranges -length))
 
 (defn set-mode
-  "Set mode option for editor `e`.
-
-  See [getOption](http://codemirror.net/doc/manual.html#getOption)."
+  "Set the language mode for editor `e` (reconfigures the CM6 language compartment)."
   [e m]
-  (if (cm6? e)
-    (cm6-modes/set-mode! (->cm-ed e) (:cm6-language @e) m)
-    (.setOption (->cm-ed e) "mode" m))
+  (cm6-modes/set-mode! (->cm-ed e) (:cm6-language @e) m)
   e)
 
 (defn ->mode
@@ -503,9 +474,7 @@
   See [operation](http://codemirror.net/doc/manual.html#operation)."
   [e func]
   ;; CM6 batches via transactions — no operation wrapper; just run the fn.
-  (if (cm6? e)
-    (func)
-    (.operation (->cm-ed e) func))
+  (func)
   e)
 
 (defn on-click
@@ -536,68 +505,47 @@
   [e widg]
   (.removeLineWidget (->cm-ed e) widg))
 
-;; Eval result-widget seam (ADR 0009). A "handle" abstracts CM5 bookmark/lineWidget
-;; (TextMarker/LineHandle identity) and CM6 decoration ids, so eval.cljs stores one
-;; handle and never touches raw CM marks. CM6 decorations auto-track through edits,
-;; so the CM5 move/relocate machinery has no CM6 counterpart (auto-tracking).
+;; Eval result-widget seam (ADR 0009): a CM6 decoration id (cm6.results). Decorations
+;; auto-track through edits, so the CM5 move/relocate machinery has no counterpart.
 (defn add-result-widget
   "Add an eval result widget DOM `el` at 0-based `line`. `opts`: {:block? — render
-  below the line (underline/exception) vs inline at line end; :id — CM6 tracking
-  id}. Returns a handle: the CM6 id, or the CM5 mark/lineWidget."
-  [e line el {:keys [block? id] :as opts}]
-  (if (cm6? e)
-    (cm6-results/add! (->cm-ed e) id line el opts)
-    (if block?
-      (line-widget e line el {:coverGutter false})
-      (bookmark e {:line line} {:widget el :insertLeft true}))))
+  below the line (underline/exception) vs inline at line end; :id — tracking id}.
+  Returns the decoration id."
+  [e line el {:keys [id] :as opts}]
+  (cm6-results/add! (->cm-ed e) id line el opts))
 
 (defn remove-result-widget
-  "Remove the result widget `handle`. `block?` selects the CM5 removal path."
-  [e handle block?]
-  (if (cm6? e)
-    (cm6-results/remove! (->cm-ed e) handle)
-    (if block?
-      (remove-line-widget e handle)
-      (.clear handle))))
+  "Remove the result widget `id`. (`_block?` kept for call-site symmetry.)"
+  [e id _block?]
+  (cm6-results/remove! (->cm-ed e) id))
 
 (defn result-widget-present?
-  "True if result `handle` is still attached (its line not deleted)."
-  [e handle]
-  (if (cm6? e)
-    (cm6-results/present? (->cm-ed e) handle)
-    (boolean (.find handle))))
+  "True if result `id` is still attached (its line not deleted)."
+  [e id]
+  (cm6-results/present? (->cm-ed e) id))
 
-;; Watch-mark seam (ADR 0009). A "watch handle" abstracts a CM5 TextMarker and a
-;; CM6 watches-layer decoration id. Watch metadata (custom expr) lives in the
-;; watches plugin's own :watches map, so the handle only tracks the highlight range.
+;; Watch-mark seam (ADR 0009): a CM6 watches-layer decoration id. Watch metadata
+;; (custom expr) lives in the watches plugin's :watches map.
 (defn add-watch-mark
-  "Mark range [from, to) ({:line :ch}) as a watch highlight. Returns the handle."
+  "Mark range [from, to) ({:line :ch}) as a watch highlight. Returns the id."
   [e from to]
-  (if (cm6? e)
-    (let [v (->cm-ed e)
-          st (cm6-view/view-state v)
-          id (keyword (str "lt-watch-" (gensym)))]
-      (cm6-watches/add! v id (cm6/pos->offset st from) (cm6/pos->offset st to)))
-    (mark e from to {:className "watched" :inclusiveLeft false :inclusiveRight false})))
+  (let [v (->cm-ed e)
+        st (cm6-view/view-state v)
+        id (keyword (str "lt-watch-" (gensym)))]
+    (cm6-watches/add! v id (cm6/pos->offset st from) (cm6/pos->offset st to))))
 
 (defn watch-mark-bounds
-  "Current {:from {:line :ch} :to {:line :ch}} of watch `handle`, or nil if gone."
-  [e handle]
-  (if (cm6? e)
-    (let [v (->cm-ed e)
-          st (cm6-view/view-state v)]
-      (when-let [r (cm6-watches/bounds v handle)]
-        {:from (cm6/offset->pos st (:from r)) :to (cm6/offset->pos st (:to r))}))
-    (when-let [p (.find handle)]
-      {:from {:line (.. p -from -line) :ch (.. p -from -ch)}
-       :to   {:line (.. p -to -line) :ch (.. p -to -ch)}})))
+  "Current {:from {:line :ch} :to {:line :ch}} of watch `id`, or nil if gone."
+  [e id]
+  (let [v (->cm-ed e)
+        st (cm6-view/view-state v)]
+    (when-let [r (cm6-watches/bounds v id)]
+      {:from (cm6/offset->pos st (:from r)) :to (cm6/offset->pos st (:to r))})))
 
 (defn clear-watch-mark
-  "Remove watch highlight `handle`."
-  [e handle]
-  (if (cm6? e)
-    (cm6-watches/remove! (->cm-ed e) handle)
-    (.clear handle)))
+  "Remove watch highlight `id`."
+  [e id]
+  (cm6-watches/remove! (->cm-ed e) id))
 
 (defn line
   "Returns the content of line `l` from editor `e`.
@@ -679,29 +627,21 @@
   e)
 
 (defn inner-mode
-  "Sets the innerMode of editor `e`'s CodeMirror object with `state` if provided.
-  Returns the mode. CM6 has no innerMode (it is a Lezer tree, not a stream mode);
-  returns nil there so callers fall back (e.g. auto-complete's hint-pattern)."
-  ([e] (inner-mode e nil))
-  ([e state]
-   (when-not (cm6? e)
-     (let [state (or state (->> (cursor e) (->token-js e) (.-state)))]
-       (-> (js/CodeMirror.innerMode (.getMode (->cm-ed e)) state)
-           (.-mode))))))
+  "CM6 has no innerMode (a Lezer tree, not a stream mode) — always nil; callers
+  fall back (e.g. auto-complete's hint-pattern → per-editor :hint-pattern/default)."
+  ([_e] nil)
+  ([_e _state] nil))
 
 (defn position-hint
-  "Position popup `elem` (already in the DOM) at editor position `pos` ({:line :ch}).
-  CM6: place it at the screen coords of that offset (coordsAtPos); CM5: defer to the
-  search-addon's positionHint, which takes a column."
+  "Position popup `elem` (already in the DOM) at editor position `pos` ({:line :ch})
+  using the CM6 view's screen coords (coordsAtPos)."
   [e elem pos]
-  (if (cm6? e)
-    (let [v (->cm-ed e)
-          off (cm6/pos->offset (cm6-view/view-state v) pos)]
-      (when-let [coords (.coordsAtPos v off)]
-        (set! (.. elem -style -position) "fixed")
-        (set! (.. elem -style -left) (str (.-left coords) "px"))
-        (set! (.. elem -style -top) (str (.-bottom coords) "px"))))
-    (js/CodeMirror.positionHint (->cm-ed e) elem (:ch pos))))
+  (let [v (->cm-ed e)
+        off (cm6/pos->offset (cm6-view/view-state v) pos)]
+    (when-let [coords (.coordsAtPos v off)]
+      (set! (.. elem -style -position) "fixed")
+      (set! (.. elem -style -left) (str (.-left coords) "px"))
+      (set! (.. elem -style -top) (str (.-bottom coords) "px")))))
 
 (defn adjust-loc
   "Adjust position `loc` with integer offset `dir` and the key `axis`. Axis should either be `:line` or `:ch`.
@@ -745,95 +685,53 @@
   (.indentSelection (->cm-ed e) dir))
 
 ;; Comment seam (ADR 0009). CM6 toggleComment/lineComment StateCommands act on the
-;; view's CURRENT selection, so the CM6 path ignores from/to/opts (the view already
-;; holds the user's selection that pool/do-commenting derived them from). Comment
-;; tokens come from the language's commentTokens languageData (cm6.modes attaches
-;; them to the legacy modes). CM5 path unchanged.
+;; view's CURRENT selection, so from/to/opts are unused (the view holds the user's
+;; selection). Comment tokens come from the language's commentTokens languageData
+;; (cm6.modes attaches them to the legacy modes).
 (defn line-comment
-  "Changes lines within range of `from` and `to` into line comments for editor `e`.
-
-  See [lineComment](http://codemirror.net/doc/manual.html#lineComment)."
-  [e from to opts]
-  (if (cm6? e)
-    (cm6-comment/line! (->cm-ed e))
-    (.lineComment (->cm-ed e) (clj->js from) (clj->js to) (clj->js opts))))
+  "Line-comment the current selection (CM6 lineComment)."
+  [e _from _to _opts] (cm6-comment/line! (->cm-ed e)))
 
 (defn uncomment
-  "Attempts to uncomment lines within range of `from` and `to` for editor `e`.
-
-  Returns `true` if comment range was successfully removed.
-
-  See [uncomment](http://codemirror.net/doc/manual.html#uncomment)."
-  [e from to opts]
-  (if (cm6? e)
-    (cm6-comment/uncomment! (->cm-ed e))
-    (.uncomment (->cm-ed e) (clj->js from) (clj->js to) (clj->js opts))))
+  "Uncomment the current selection (CM6 toggleLineComment removes when commented)."
+  [e _from _to _opts] (cm6-comment/uncomment! (->cm-ed e)))
 
 (defn block-comment
-  "Wrap lines within range of `from` and `to` for editor `e`.
-
-  See [blockComment](http://codemirror.net/doc/manual.html#blockComment)."
-  [e from to opts]
-  (if (cm6? e)
-    (cm6-comment/block! (->cm-ed e))
-    (.blockComment (->cm-ed e) (clj->js from) (clj->js to) (clj->js opts))))
+  "Block-comment the current selection (CM6 blockComment)."
+  [e _from _to _opts] (cm6-comment/block! (->cm-ed e)))
 
 (defn toggle-comment
-  "Toggle comment and if multiline toggle apply block comment"
-  [e from to opts]
-  (if (cm6? e)
-    (cm6-comment/toggle! (->cm-ed e))
-    (when-not (uncomment e from to opts)
-      (if-not (= (:line from) (:line to))
-        (block-comment e from to opts)
-        (line-comment e from (->cursor e "end") opts)))))
+  "Toggle comment over the current selection (CM6 toggleComment)."
+  [e _from _to _opts] (cm6-comment/toggle! (->cm-ed e)))
 
-;; Search seam (ADR 0009). CM6 → cm6.find (cm6.search match computation + a
-;; highlight decoration layer); CM5 → the search addon commands (find.cljs loads
-;; them on init). `opts` carries {:reverse? :regexp? :case-sensitive?}. CM5 holds
-;; query state in the addon; CM6 is stateless — find.cljs passes the query each call.
+;; Search seam (ADR 0009): cm6.find (cm6.search match computation + a highlight
+;; decoration layer). `opts` carries {:reverse? :regexp? :case-sensitive?};
+;; stateless — find.cljs passes the query each call.
 (defn search
   "Begin a search for `query`: move to the first match at/after the cursor and
-  highlight all matches. Returns the match or nil (CM6)."
+  highlight all matches. Returns the match or nil."
   [e query opts]
-  (if (cm6? e)
-    (let [v (->cm-ed e)]
-      (cm6-find/search! v query opts (cm6/cursor-offset (cm6-view/view-state v))))
-    (js/CodeMirror.commands.find (->cm-ed e) query (:reverse? opts))))
+  (let [v (->cm-ed e)]
+    (cm6-find/search! v query opts (cm6/cursor-offset (cm6-view/view-state v)))))
 
-(defn find-next
-  "Move to the next match (wrapping)."
-  [e query opts]
-  (if (cm6? e)
-    (cm6-find/next! (->cm-ed e) query opts)
-    (js/CodeMirror.commands.findNext (->cm-ed e) (:reverse? opts))))
+(defn find-next "Move to the next match (wrapping)." [e query opts]
+  (cm6-find/next! (->cm-ed e) query opts))
 
-(defn find-prev
-  "Move to the previous match (wrapping)."
-  [e query opts]
-  (if (cm6? e)
-    (cm6-find/prev! (->cm-ed e) query opts)
-    (js/CodeMirror.commands.findPrev (->cm-ed e) (:reverse? opts))))
+(defn find-prev "Move to the previous match (wrapping)." [e query opts]
+  (cm6-find/prev! (->cm-ed e) query opts))
 
-(defn clear-search
-  "Clear the current search highlight/state."
-  [e]
-  (if (cm6? e)
-    (cm6-find/clear! (->cm-ed e))
-    (js/CodeMirror.commands.clearSearch (->cm-ed e))))
+(defn clear-search "Clear the current search highlight." [e]
+  (cm6-find/clear! (->cm-ed e)))
 
 (defn replace-search
   "Replace the current match, or `all?` matches, with `replacement`."
   [e query replacement opts all?]
-  (if (cm6? e)
-    (let [v (->cm-ed e)]
-      (if all?
-        (cm6-find/replace-all! v query replacement opts)
-        (when-not (cm6-find/replace-current! v query replacement opts)
-          ;; not currently on a match → advance to one, then replace it
-          (when (cm6-find/next! v query opts)
-            (cm6-find/replace-current! v query replacement opts)))))
-    (js/CodeMirror.commands.replace (->cm-ed e) replacement (:reverse? opts) (boolean all?))))
+  (let [v (->cm-ed e)]
+    (if all?
+      (cm6-find/replace-all! v query replacement opts)
+      (when-not (cm6-find/replace-current! v query replacement opts)
+        (when (cm6-find/next! v query opts)
+          (cm6-find/replace-current! v query replacement opts))))))
 
 (defn ->generation
   "Returns an integer that can be used to test if edits have occurred.
@@ -850,20 +748,9 @@
   (be/-dirty? (backend e) gen))
 
 (defn get-doc
-  "Returns currently active CM document for the editor (CM5 only). CM6 has no
-  detachable Doc — returns nil there; callers (save-as) seed a new doc from the
-  editor's value instead."
-  [e]
-  (when-not (cm6? e)
-    (.getDoc (->cm-ed e))))
-
-(defn set-doc!
-  "Adds document `doc` to editor `e`. If there is already a document associated with the editor then it is replaced. Returns old document.
-
-  See [swapDoc](http://codemirror.net/doc/manual.html#swapDoc)."
-  [e doc]
-  (object/merge! e {:doc doc})
-  (.swapDoc (->cm-ed e) (:doc @doc)))
+  "CM6 has no detachable Doc — always nil. Callers (save-as) seed a new doc from
+  the editor's value instead."
+  [_e] nil)
 
 (defn fold-code
   "Attempts to fold code starting at position `loc`. If position is not provided then folding will be attempted at the cursor position.
