@@ -15,7 +15,10 @@
                 ;; M3/M4 substrate: sig (cell/res) vendored into the fork.
                 ;; Closure = cell + res; provenance + re-sync in vendor/sig/PROVENANCE.md.
                 ;; Needs npm alien-signals (package.json) + malli (below).
-                "vendor/sig"]
+                "vendor/sig"
+                ;; Protocol substrate: defport (LSP/DAP/MCP/CDP). Framing closure
+                ;; vendored so far; provenance + packaging note in vendor/defport/PROVENANCE.md.
+                "vendor/defport"]
 
  :dependencies
  [[org.clojars.prertik/singultus "1.0.0"]
@@ -23,7 +26,12 @@
   ;; aget-on-objects + the String/Array prototype monkeypatch; malli for schemas
   ;; at res/settings/protocol boundaries. Imported now; consumed as that work lands.
   [cljs-bean "1.9.0"]
-  [metosin/malli "0.20.1"]]
+  [metosin/malli "0.20.1"]
+  ;; defport's util.platform is a .cljc whose :clj branch uses cheshire; framing
+  ;; pulls it via :include-macros, so cheshire must be on the COMPILE classpath
+  ;; (JVM, macro-ns loading). The :cljs output uses native JSON — cheshire is not
+  ;; bundled into the renderer.
+  [cheshire/cheshire "5.13.0"]]
 
  :builds
  {:app
