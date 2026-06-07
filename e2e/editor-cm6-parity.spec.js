@@ -243,3 +243,20 @@ test('CM6 live — eval exception via the eval manager (block widget)', async ()
   await win.waitForFunction(() => document.querySelectorAll('.inline-exception').length > 0);
   expect(await ex()).toBe(1);
 });
+
+// ADR 0009 — auto_complete on CM6: the inner-mode crash is the real blocker; this
+// proves get-pattern/get-token work and the hint popup opens (no line-handle / no
+// positionHint crash).
+test('CM6 live — auto-complete (token extraction + hint popup, no inner-mode crash)', async () => {
+  await lt('setVal', 'alphabet\nal');
+  // get-pattern must not crash (inner-mode → nil on CM6) and get-token reads the word
+  expect(await lt('hintPatternOk')).toBe(true);
+  expect((await lt('hintTokenAt', 0, 8)).string).toBe('alphabet');
+  // open the hint popup on the "al" token with seeded completions
+  await lt('moveCursor', { line: 1, ch: 2 });
+  await lt('seedHints', ['alpha', 'alphabet', 'beta']);
+  await lt('showHint');
+  await win.waitForFunction(() => window.__lt_test.hintActive() === true).catch(() => {});
+  expect(await lt('hintActive')).toBe(true);          // popup opened, no crash
+  await lt('execCommand', 'esc');                       // cleanup (best-effort)
+});

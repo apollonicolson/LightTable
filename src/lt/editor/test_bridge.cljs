@@ -16,6 +16,7 @@
             [lt.editor.cm6.find :as cm6-find]
             [lt.editor.cm6.results :as cm6-results]
             [lt.editor.cm6.view :as cm6-view]
+            [lt.plugins.auto-complete :as ac]
             [lt.objs.tabs :as tabs])
   (:require-macros [lt.macros :refer [behavior]]))
 
@@ -95,7 +96,16 @@
        :removeResult  (fn [id block?] (when-let [e (ed)] (editor/remove-result-widget e (keyword id) (boolean block?))) nil)
        ;; drive the full eval manager path (::inline-results etc.) on the active editor
        :evalResult    (fn [text line] (when-let [e (ed)] (object/raise e :editor.result text {:line line} {:type :inline})) nil)
-       :evalException (fn [ex line] (when-let [e (ed)] (object/raise e :editor.exception ex {:line line})) nil)})
+       :evalException (fn [ex line] (when-let [e (ed)] (object/raise e :editor.exception ex {:line line})) nil)
+       ;; auto-complete: prove get-pattern/get-token work on CM6 (no inner-mode crash)
+       ;; and that the hint popup opens without throwing.
+       :hintTokenAt (fn [line ch] (when-let [e (ed)] (clj->js (ac/get-token e {:line line :ch ch}))))
+       :hintPatternOk (fn [] (when-let [e (ed)] (boolean (ac/get-pattern e))))
+       :seedHints   (fn [words] (when-let [e (ed)]
+                                  (object/merge! e {(keyword "lt.plugins.auto-complete" "hints")
+                                                    (clj->js (mapv (fn [w] {:completion w}) words))})) nil)
+       :showHint    (fn [] (when-let [e (ed)] (object/raise e :hint {:force? true})) nil)
+       :hintActive  (fn [] (boolean (:active @ac/hinter)))})
 
 (defn install!
   "Expose the editor seam on window.__lt_test when LT_TEST_BRIDGE is set. No-op

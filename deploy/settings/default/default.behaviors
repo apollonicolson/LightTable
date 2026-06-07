@@ -173,6 +173,7 @@
  [:editor :lt.objs.editor/destroy-on-close]
  [:editor :lt.objs.sidebar.clients/track-active-client]
  [:editor :lt.plugins.auto-complete/intra-buffer-string-hints]
+ [:editor :lt.plugins.auto-complete/cm6-hint-refresh]
  [:editor :lt.plugins.auto-complete/textual-hints]
  [:editor :lt.plugins.auto-paren/close-pair]
  [:editor :lt.objs.editor.pool/track-active]

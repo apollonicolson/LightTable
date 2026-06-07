@@ -56,8 +56,10 @@
 (def default-pattern #"[\w_$]")
 
 (defn get-pattern [ed]
+  ;; CM6 has no inner-mode (returns nil) — fall back to the per-editor :hint-pattern
+  ;; (set by langs behaviors) or the default. CM5 still reads the mode's hint-pattern.
   (let [mode (editor/inner-mode ed)]
-    (or (:hint-pattern @ed) (aget mode "hint-pattern") default-pattern)))
+    (or (:hint-pattern @ed) (when mode (aget mode "hint-pattern")) default-pattern)))
 
 (defn get-token [ed pos]
   (let [line (editor/line ed (:line pos))
@@ -83,12 +85,16 @@
             (recur)))))))
 
 (defn non-token-change? [ed ch]
-  (let [pattern (get-pattern ed)
-        text (map str (.-text ch))]
-    (condp = (.-origin ch)
-      "+input" (some #(not (re-seq pattern %)) text)
-      "paste" true
-      false)))
+  ;; CM6 has no per-line CM5 change object (ch is nil) — treat as a token change so
+  ;; live filtering continues rather than escaping the hint.
+  (if-not ch
+    false
+    (let [pattern (get-pattern ed)
+          text (map str (.-text ch))]
+      (condp = (.-origin ch)
+        "+input" (some #(not (re-seq pattern %)) text)
+        "paste" true
+        false))))
 
 (def w (background (fn [obj-id m]
                      (.log js/console "M:" (pr-str obj-id) (pr-str m))
@@ -243,6 +249,16 @@
           :reaction (fn [this tokens]
                       (object/merge! this {::hints tokens})))
 
+(behavior ::cm6-hint-refresh
+          :triggers #{:change}
+          :desc "Auto-complete: refresh the open hint on CM6 editor changes (CM6 has
+          no per-line change listener; this drives the same :line-change refresh)."
+          :reaction (fn [this & _]
+                      (when (and (:active @hinter)
+                                 (identical? (:ed @hinter) this)
+                                 (editor/cm6? this))
+                        (on-line-change nil nil))))
+
 (behavior ::intra-buffer-string-hints
           :triggers #{:change}
           :debounce 400
@@ -257,7 +273,9 @@
   ([this opts]
    (let [pos (editor/->cursor this)
          token (get-token this pos)
-         line (editor/line-handle this (:line pos))
+         ;; CM6 has no line handles — track typing via the editor :change event
+         ;; (::cm6-hint-refresh) instead of a per-line "change" listener.
+         line (when-not (editor/cm6? this) (editor/line-handle this (:line pos)))
          elem (object/->content hinter)]
      (ctx/in! [:editor.keys.hinting.active] this)
      (object/merge! hinter {:token token
@@ -273,9 +291,9 @@
         (and (= 1 count)
              (:select-single opts)) (object/raise hinter :select! 0)
         :else (do
-                (js/CodeMirror.on line "change" on-line-change)
+                (when line (js/CodeMirror.on line "change" on-line-change))
                 (dom/append (dom/$ :body) elem)
-                (js/CodeMirror.positionHint (editor/->cm-ed this) elem (:start token))))))))
+                (editor/position-hint this elem {:line (:line token) :ch (:start token)})))))))
 
 (behavior ::show-hint
           :triggers #{:hint}

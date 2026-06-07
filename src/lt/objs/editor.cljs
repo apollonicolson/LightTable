@@ -672,12 +672,29 @@
   e)
 
 (defn inner-mode
-  "Sets the innerMode of editor `e`'s CodeMirror object with `state` if provided. Returns the mode."
+  "Sets the innerMode of editor `e`'s CodeMirror object with `state` if provided.
+  Returns the mode. CM6 has no innerMode (it is a Lezer tree, not a stream mode);
+  returns nil there so callers fall back (e.g. auto-complete's hint-pattern)."
   ([e] (inner-mode e nil))
   ([e state]
-   (let [state (or state (->> (cursor e) (->token-js e) (.-state)))]
-     (-> (js/CodeMirror.innerMode (.getMode (->cm-ed e)) state)
-         (.-mode)))))
+   (when-not (cm6? e)
+     (let [state (or state (->> (cursor e) (->token-js e) (.-state)))]
+       (-> (js/CodeMirror.innerMode (.getMode (->cm-ed e)) state)
+           (.-mode))))))
+
+(defn position-hint
+  "Position popup `elem` (already in the DOM) at editor position `pos` ({:line :ch}).
+  CM6: place it at the screen coords of that offset (coordsAtPos); CM5: defer to the
+  search-addon's positionHint, which takes a column."
+  [e elem pos]
+  (if (cm6? e)
+    (let [v (->cm-ed e)
+          off (cm6/pos->offset (cm6-view/view-state v) pos)]
+      (when-let [coords (.coordsAtPos v off)]
+        (set! (.. elem -style -position) "fixed")
+        (set! (.. elem -style -left) (str (.-left coords) "px"))
+        (set! (.. elem -style -top) (str (.-bottom coords) "px"))))
+    (js/CodeMirror.positionHint (->cm-ed e) elem (:ch pos))))
 
 (defn adjust-loc
   "Adjust position `loc` with integer offset `dir` and the key `axis`. Axis should either be `:line` or `:ch`.
