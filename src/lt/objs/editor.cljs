@@ -350,11 +350,9 @@
    (be/-replace (backend e) from to v)))
 
 (defn range
-  "Returns text between positions `from` and `to`.
-
-  See [getRange](http://codemirror.net/doc/manual.html#getRange)."
+  "Returns text between positions `from` and `to` ({:line :ch})."
   [e from to]
-  (.getRange (->cm-ed e) (clj->js from) (clj->js to)))
+  (cm6/range-text (cm6-view/view-state (->cm-ed e)) from to))
 
 (defn line-count
   "Returns the number of lines in the editor.
@@ -377,19 +375,14 @@
   (be/-move-cursor (backend ed) pos))
 
 (defn scroll-to
-  "Scroll editor to pixel position `x`,`y`.
-
-  See [scrollTo](http://codemirror.net/doc/manual.html#scrollTo)."
+  "Scroll editor to pixel position `x`,`y` (either may be nil)."
   [ed x y]
-  (.scrollTo (->cm-ed ed) x y))
+  (cm6-view/scroll-to! (->cm-ed ed) x y))
 
 (defn center-cursor
-  "Scrolls editor `ed` to the cursor and places it in the center of screen."
+  "Scrolls editor `ed` so the cursor is vertically centered."
   [ed]
-  (let [l (:line (->cursor ed))
-        y (.-top (.charCoords (->cm-ed ed) (clj->js {:line l :ch 0}) "local"))
-        half-h (/ (.-offsetHeight (.getScrollerElement (->cm-ed ed))) 2)]
-    (scroll-to ed nil (- y half-h -55))))
+  (cm6-view/center-on-offset! (->cm-ed ed) (cm6/cursor-offset (cm6-view/view-state (->cm-ed ed)))))
 
 (defn selection?
   "True if text is selected in editor.
@@ -659,30 +652,29 @@
   [ed dir]
   (be/-get-char (backend ed) dir))
 
-(defn indent-line
-  "Indents the line `l` based on the `dir` specified for editor `e`.
+(defn- indent! [e dir]
+  ;; CM6 indentMore/indentLess act on the current selection (CM5 "add"/"subtract").
+  (if (= "subtract" (str dir))
+    (cm6-view/indent-less! (->cm-ed e))
+    (cm6-view/indent-more! (->cm-ed e))))
 
-  See [indent-line](http://codemirror.net/doc/manual.html#indentLine)."
+(defn indent-line
+  "Indent line `l` by `dir` (\"add\"/\"subtract\"). CM6 indents via the selection,
+  so this selects line `l` first."
   [e l dir]
-  (.indentLine (->cm-ed e) l dir))
+  (set-selection e {:line l :ch 0} {:line l :ch 0})
+  (indent! e dir))
 
 (defn indent-lines
-  "Indents lines within the range resulting from `from` and `to` based on the `dir` specified
-  for editor `e`.
-
-  See [indent-line](http://codemirror.net/doc/manual.html#indentLine)."
+  "Indent the lines spanned by `from`..`to` by `dir`."
   [e from to dir]
-  (let [ed (->cm-ed e)
-        diff (- (:line to) (:line from))]
-    (if (zero? diff)
-      (.indentLine ed (:line to) dir)
-      (dotimes [x (inc diff)]
-        (.indentLine ed (+ (:line from) x))))))
+  (set-selection e {:line (:line from) :ch 0} {:line (:line to) :ch 0})
+  (indent! e dir))
 
 (defn indent-selection
-  "Intent current selection in editor `e` by integer offset `dir`."
+  "Indent the current selection by `dir` (\"add\"/\"subtract\")."
   [e dir]
-  (.indentSelection (->cm-ed e) dir))
+  (indent! e dir))
 
 ;; Comment seam (ADR 0009). CM6 toggleComment/lineComment StateCommands act on the
 ;; view's CURRENT selection, so from/to/opts are unused (the view holds the user's

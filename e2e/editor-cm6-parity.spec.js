@@ -290,6 +290,19 @@ test('CM6 live — doc-model (CM6 editor seeds content from its doc + edits)', a
   expect(await lt('val')).toBe('EDITED\nfrom\ndoc');   // edits land in the CM6 view
 });
 
+// ADR 0009 Tier 3 — seam fns that were CM5-method calls now have CM6 impls
+// (these crashed on CM6 before; range/scroll/center/indent).
+test('CM6 live — range / center-cursor / indent (CM6 impls, no CM5-method crash)', async () => {
+  await lt('setVal', 'abcdef\nghij');
+  expect(await lt('range', { line: 0, ch: 1 }, { line: 0, ch: 4 })).toBe('bcd');
+  await lt('moveCursor', { line: 1, ch: 0 });
+  await lt('centerCursor');                            // geometry: must not throw
+  // indent the current line (selection) — adds a unit of indent
+  await lt('setSelection', { line: 1, ch: 0 }, { line: 1, ch: 4 });
+  await lt('indentSelection', 'add');
+  expect((await lt('val')).split('\n')[1].startsWith(' ')).toBe(true);
+});
+
 // ADR 0009 step 4 — THE FLIP: a default editor (no :backend) is now CM6.
 test('CM6 live — flip: default editor is CM6', async () => {
   expect(await lt('openDefault', 'default editor')).toBe(true);

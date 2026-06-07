@@ -120,6 +120,26 @@
 (defn undo! "Undo on the live view (no-op if no history)." [view] (cm-undo view) view)
 (defn redo! "Redo on the live view (no-op if nothing to redo)." [view] (cm-redo view) view)
 
+(def ^:private cm-indent-more (.-indentMore cm-commands))
+(def ^:private cm-indent-less (.-indentLess cm-commands))
+
+(defn indent-more! "Indent the current selection one unit." [view] (cm-indent-more view) view)
+(defn indent-less! "Dedent the current selection one unit." [view] (cm-indent-less view) view)
+
+(defn scroll-to!
+  "Scroll the view's scroller to pixel `x`/`y` (either may be nil) — CM5 scrollTo."
+  [view x y]
+  (let [dom (.-scrollDOM view)]
+    (when y (set! (.-scrollTop dom) y))
+    (when x (set! (.-scrollLeft dom) x)))
+  view)
+
+(defn center-on-offset!
+  "Scroll so `offset` is vertically centered (CM5 center-cursor)."
+  [view offset]
+  (.dispatch view #js {:effects ((.-scrollIntoView EditorView) offset #js {:y "center"})})
+  view)
+
 (defn update-listener
   "An extension that calls `(on-update update)` on every view update — CM6's
   single unified event hook (vs CM5's many .on(name) handlers). The caller maps
