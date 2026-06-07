@@ -154,52 +154,9 @@
 ;; Creating
 ;;*********************************************************
 
-(defn- headless
-  "Create a headless CodeMirror object using `opts`."
-  [opts]
-  (-> (js/CodeMirror. (fn []))
-      (set-options opts)))
-
-(defn- make [context]
-  (let [e (headless {:mode (if (:mime context)
-                             (name (:mime context))
-                             "plaintext")
-                     :autoClearEmptyLines true
-                     :dragDrop false
-                     :undoDepth 10000
-                     :matchBrackets true
-                     :singleCursorHeightPerLine false
-                     :showCursorWhenSelecting true})]
-    (when-let [c (:content context)]
-      (set-val e c)
-      (clear-history e))
-    (when (:doc context)
-      (.swapDoc e (-> (:doc context) deref :doc)))
-    e))
-
-(defn on
-  "Register event handler `ev`, which fires `func`, on editor `ed`'s CodeMirror object."
-  [ed ev func]
-  (.on (->cm-ed ed) (name ev) func))
-
-(defn off
-  "Remove event handler `ev`, which fires `func`, on editor `ed`'s CodeMirror object."
-  [ed ev func]
-  (.off (->cm-ed ed) (name ev) func))
-
-(defn- wrap-object-events [ed obj]
-  (dom/on (->elem ed) :contextmenu #(object/raise obj :menu! %))
-  (on ed :dragstart #(.preventDefault %2))
-  (on ed :dragenter #(.preventDefault %2))
-  (on ed :dragover #(.preventDefault %2))
-  (on ed :drop #(.preventDefault %2))
-  (on ed :scroll #(object/raise obj :scroll %))
-  (on ed :update #(object/raise obj :update % %2))
-  (on ed :change #(object/raise obj :change % %2))
-  (on ed :inputRead #(object/raise obj :input % %2))
-  (on ed :cursorActivity #(object/raise obj :move % %2))
-  (on ed :focus #(object/raise obj :focus %))
-  (on ed :blur #(object/raise obj :blur %)))
+;; CM5 creation (headless/make), the .on/.off CM5 event helpers, and
+;; wrap-object-events were removed with CM5 — object* builds a CM6 view and wires
+;; events via cm6-view/update-listener + contentDOM focus/blur (ADR 0009).
 
 ;;*********************************************************
 ;; Params
@@ -961,57 +918,45 @@
 (object* ::editor
          :tags #{:editor :editor.inline-result :editor.keys.normal}
          :init (fn [obj info]
-                 ;; FLIP (ADR 0009 step 4): CM6 is the DEFAULT — every editor is CM6
-                 ;; unless a caller explicitly opts back to CM5 with {:backend :cm5}
-                 ;; (kept as an escape hatch until CM5 is deleted in the next step).
-                 (if (not= :cm5 (:backend info))
-                   ;; CM6-backed editor: a detached EditorView; its .dom is the tab
-                   ;; element. The seam drives it via :backend.
-                   (let [compartments (cm6-options/make-compartments)
-                         lang-compartment (cm6-modes/make-compartment)
-                         ;; CM6's single updateListener → the LightTable :change/:move
-                         ;; triggers (vs CM5's per-event .on wiring).
-                         events (cm6-view/update-listener
-                                  (fn [update]
-                                    (when (.-docChanged update) (object/raise obj :change update))
-                                    (when (.-selectionSet update) (object/raise obj :move update))))
-                         extra (.concat (cm6-options/initial-extensions compartments)
-                                        #js [events
-                                             cm6-view/editing-keymap
-                                             cm6-modes/syntax-highlighting
-                                             (:field cm6-find/layer)
-                                             (:field cm6-results/layer)
-                                             (:field cm6-watches/layer)
-                                             (cm6-modes/initial lang-compartment (:mime info))])
-                         ;; Seed from :content (transient editors) or, for a file
-                         ;; editor, from the doc's text (opener passes :doc, not
-                         ;; :content). The CM5 Doc object remains the manager's record
-                         ;; (mtime); editing + save flow through the CM6 view/backend.
-                         seed (or (:content info)
-                                  (when-let [d (:doc info)] (.getValue (:doc (deref d))))
-                                  "")
-                         state (cm6/make-state seed extra)
-                         view (cm6-view/create-view nil {:state state})]
-                     (object/merge! obj {:ed view
-                                         :backend (be/cm6-backend view)
-                                         :backend-kind :cm6
-                                         :cm6-compartments compartments
-                                         :cm6-language lang-compartment
-                                         :info (dissoc info :content :doc)})
-                     ;; Minimal CM6 event wiring: focus/blur on the contenteditable
-                     ;; drive the standard :focus→:active / :blur→:inactive chain
-                     ;; (the CM5 path does this via wrap-object-events). Enough for
-                     ;; pool last-active tracking; richer events are a later slice.
-                     (let [cd (.-contentDOM view)]
-                       (.addEventListener cd "focus" (fn [_] (object/raise obj :focus)))
-                       (.addEventListener cd "blur"  (fn [_] (object/raise obj :blur))))
-                     (cm6-view/dom view))
-                   (let [ed (make info)]
-                     (object/merge! obj {:ed ed
-                                         :doc (:doc info)
-                                         :info (dissoc info :content :doc)})
-                     (wrap-object-events ed obj)
-                     (->elem ed)))))
+                 ;; CM6 is the ONLY backend (ADR 0009 — CM5 removed). A detached
+                 ;; EditorView; its .dom is the tab element; the seam drives it.
+                 (let [compartments (cm6-options/make-compartments)
+                       lang-compartment (cm6-modes/make-compartment)
+                       ;; CM6's single updateListener → the LightTable :change/:move
+                       ;; triggers (vs CM5's per-event .on wiring).
+                       events (cm6-view/update-listener
+                                (fn [update]
+                                  (when (.-docChanged update) (object/raise obj :change update))
+                                  (when (.-selectionSet update) (object/raise obj :move update))))
+                       extra (.concat (cm6-options/initial-extensions compartments)
+                                      #js [events
+                                           cm6-view/editing-keymap
+                                           cm6-modes/syntax-highlighting
+                                           (:field cm6-find/layer)
+                                           (:field cm6-results/layer)
+                                           (:field cm6-watches/layer)
+                                           (cm6-modes/initial lang-compartment (:mime info))])
+                       ;; Seed from :content (transient editors) or, for a file editor,
+                       ;; from the doc's text (opener passes :doc, not :content). The
+                       ;; doc object remains the manager's record (mtime); editing +
+                       ;; save flow through the CM6 view/backend.
+                       seed (or (:content info)
+                                (when-let [d (:doc info)] (.getValue (:doc (deref d))))
+                                "")
+                       state (cm6/make-state seed extra)
+                       view (cm6-view/create-view nil {:state state})]
+                   (object/merge! obj {:ed view
+                                       :backend (be/cm6-backend view)
+                                       :backend-kind :cm6
+                                       :cm6-compartments compartments
+                                       :cm6-language lang-compartment
+                                       :info (dissoc info :content :doc)})
+                   ;; focus/blur on the contenteditable drive :focus→:active /
+                   ;; :blur→:inactive (pool last-active tracking).
+                   (let [cd (.-contentDOM view)]
+                     (.addEventListener cd "focus" (fn [_] (object/raise obj :focus)))
+                     (.addEventListener cd "blur"  (fn [_] (object/raise obj :blur))))
+                   (cm6-view/dom view))))
 
 
 ;;*********************************************************

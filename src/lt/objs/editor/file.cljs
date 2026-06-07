@@ -15,9 +15,9 @@
                       (let [{:keys [path]} (@editor :info)
                             final (object/raise-reduce editor :save+ (ed/->val editor))]
                         (when (not= final (ed/->val editor))
-                          (let [y-position (.-top (.getScrollInfo (ed/->cm-ed editor)))]
-                            (ed/set-val-and-keep-cursor editor final)
-                            (ed/scroll-to editor 0 y-position)))
+                          ;; CM6 replaces content while keeping the cursor (and scroll),
+                          ;; so the CM5 getScrollInfo/scroll-to dance is unneeded.
+                          (ed/set-val-and-keep-cursor editor final))
                         (doc/save path final
                                   (fn []
                                     (object/merge! editor {:dirty false
