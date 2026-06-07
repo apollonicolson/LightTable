@@ -3,7 +3,6 @@
   (:require [lt.object :as object]
             [lt.objs.context :as ctx]
             [lt.objs.statusbar :as statusbar]
-            [lt.util.load :as load]
             [lt.objs.canvas :as canvas]
             [lt.objs.sidebar.command :as cmd]
             [lt.objs.editor.pool :as pool]
@@ -149,11 +148,8 @@
                          (replace-input this)
                          (replace-all-button this)]))
 
-(behavior ::init
-          :triggers #{:init}
-          :reaction (fn [this]
-                      (load/js "core/node_modules/codemirror/addon/search/search.js" :sync)
-                      (load/js "core/node_modules/codemirror/addon/search/searchcursor.js" :sync)))
+;; ::init (which load/js'd the CM5 search.js/searchcursor.js addons) was removed —
+;; find runs on lt.editor.cm6.search now (ADR 0009).
 
 (def bar (object/create ::find-bar))
 (statusbar/add-container bar)

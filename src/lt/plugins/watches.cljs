@@ -79,14 +79,9 @@
                                      (str))
                               handle (ed/add-watch-mark this (:from sel) (:to sel))
                               res (inline this (merge {:type :watch :id id} opts) (:to sel))]
-                          ;; CM5: the marker's "hide" event clears on text-delete + the
-                          ;; metadata lives on the marker. CM6: metadata lives in the
-                          ;; :watches map; collapse-cleanup is a deferred refinement.
-                          (when-not (ed/cm6? this)
-                            (.on handle "hide" (fn [] (object/raise res :clear!)))
-                            (set! (.-custom handle) (when (:exp opts) opts))
-                            (set! (.-lttype handle) :watch)
-                            (set! (.-ltwatchid handle) id))
+                          ;; CM6: watch metadata lives in the :watches map (not on the
+                          ;; marker); the highlight decoration auto-tracks. Collapse-
+                          ;; cleanup on text-delete is a deferred refinement.
                           (object/update! this [:watches] assoc id {:handle handle
                                                                     :custom (when (:exp opts) opts)
                                                                     :inline-result res})
