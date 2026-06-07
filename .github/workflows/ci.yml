@@ -50,10 +50,11 @@ jobs:
         # that need a fuller clj-kondo macro config before it can be gated — a
         # separate cleanup task, not a blocker for the new code.
       - run: |
+          # capture the exit without tripping `bash -e` on warnings (rc=2)
+          rc=0
           clj-kondo --lint \
             src/lt/editor src/lt/object/resolve.cljs src/lt/object/dispatch.cljs \
-            test/lt/editor test/lt/object/resolve_test.cljs test/lt/object/dispatch_test.cljs
-          rc=$?
+            test/lt/editor test/lt/object/resolve_test.cljs test/lt/object/dispatch_test.cljs || rc=$?
           # 0 = clean, 2 = warnings (allowed). 3 = errors (fail).
           [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]
 
