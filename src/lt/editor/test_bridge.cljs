@@ -13,6 +13,8 @@
   (:require [lt.object :as object]
             [lt.objs.editor :as editor]
             [lt.objs.editor.pool :as pool]
+            [lt.editor.cm6.find :as cm6-find]
+            [lt.editor.cm6.view :as cm6-view]
             [lt.objs.tabs :as tabs])
   (:require-macros [lt.macros :refer [behavior]]))
 
@@ -63,7 +65,17 @@
        ;; comment seam (ADR 0009) — CM6 path uses the live selection, so from/to
        ;; are nil; pool/do-commenting passes the real ones in production.
        :toggleComment (fn [] (when-let [e (ed)] (editor/toggle-comment e nil nil nil)) nil)
-       :lineComment   (fn [] (when-let [e (ed)] (editor/line-comment e nil nil nil)) nil)})
+       :lineComment   (fn [] (when-let [e (ed)] (editor/line-comment e nil nil nil)) nil)
+       ;; search seam (ADR 0009). opts is a JS map e.g. {reverse:false}.
+       :search       (fn [q opts] (when-let [e (ed)] (clj->js (editor/search e q (js->clj opts :keywordize-keys true)))))
+       :findNext     (fn [q opts] (when-let [e (ed)] (clj->js (editor/find-next e q (js->clj opts :keywordize-keys true)))))
+       :findPrev     (fn [q opts] (when-let [e (ed)] (clj->js (editor/find-prev e q (js->clj opts :keywordize-keys true)))))
+       :clearSearch  (fn [] (when-let [e (ed)] (editor/clear-search e)) nil)
+       :replaceSearch (fn [q r opts all?] (when-let [e (ed)] (editor/replace-search e q r (js->clj opts :keywordize-keys true) all?)))
+       :searchMatchCount (fn [] (when-let [e (ed)]
+                                  (if (editor/cm6? e)
+                                    ((:count cm6-find/layer) (cm6-view/view-state (editor/->cm-ed e)))
+                                    0)))})
 
 (defn install!
   "Expose the editor seam on window.__lt_test when LT_TEST_BRIDGE is set. No-op

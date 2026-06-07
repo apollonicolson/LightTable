@@ -26,6 +26,7 @@
             [lt.editor.cm6.modes :as cm6-modes]
             [lt.editor.cm6.commands :as cm6-commands]
             [lt.editor.cm6.comment :as cm6-comment]
+            [lt.editor.cm6.find :as cm6-find]
             [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.command :as cmd]
@@ -731,6 +732,53 @@
         (block-comment e from to opts)
         (line-comment e from (->cursor e "end") opts)))))
 
+;; Search seam (ADR 0009). CM6 → cm6.find (cm6.search match computation + a
+;; highlight decoration layer); CM5 → the search addon commands (find.cljs loads
+;; them on init). `opts` carries {:reverse? :regexp? :case-sensitive?}. CM5 holds
+;; query state in the addon; CM6 is stateless — find.cljs passes the query each call.
+(defn search
+  "Begin a search for `query`: move to the first match at/after the cursor and
+  highlight all matches. Returns the match or nil (CM6)."
+  [e query opts]
+  (if (cm6? e)
+    (let [v (->cm-ed e)]
+      (cm6-find/search! v query opts (cm6/cursor-offset (cm6-view/view-state v))))
+    (js/CodeMirror.commands.find (->cm-ed e) query (:reverse? opts))))
+
+(defn find-next
+  "Move to the next match (wrapping)."
+  [e query opts]
+  (if (cm6? e)
+    (cm6-find/next! (->cm-ed e) query opts)
+    (js/CodeMirror.commands.findNext (->cm-ed e) (:reverse? opts))))
+
+(defn find-prev
+  "Move to the previous match (wrapping)."
+  [e query opts]
+  (if (cm6? e)
+    (cm6-find/prev! (->cm-ed e) query opts)
+    (js/CodeMirror.commands.findPrev (->cm-ed e) (:reverse? opts))))
+
+(defn clear-search
+  "Clear the current search highlight/state."
+  [e]
+  (if (cm6? e)
+    (cm6-find/clear! (->cm-ed e))
+    (js/CodeMirror.commands.clearSearch (->cm-ed e))))
+
+(defn replace-search
+  "Replace the current match, or `all?` matches, with `replacement`."
+  [e query replacement opts all?]
+  (if (cm6? e)
+    (let [v (->cm-ed e)]
+      (if all?
+        (cm6-find/replace-all! v query replacement opts)
+        (when-not (cm6-find/replace-current! v query replacement opts)
+          ;; not currently on a match → advance to one, then replace it
+          (when (cm6-find/next! v query opts)
+            (cm6-find/replace-current! v query replacement opts)))))
+    (js/CodeMirror.commands.replace (->cm-ed e) replacement (:reverse? opts) (boolean all?))))
+
 (defn ->generation
   "Returns an integer that can be used to test if edits have occurred.
 
@@ -828,6 +876,7 @@
                                         #js [events
                                              cm6-view/editing-keymap
                                              cm6-modes/syntax-highlighting
+                                             (:field cm6-find/layer)
                                              (cm6-modes/initial lang-compartment (:mime info))])
                          state (cm6/make-state (or (:content info) "") extra)
                          view (cm6-view/create-view nil {:state state})]

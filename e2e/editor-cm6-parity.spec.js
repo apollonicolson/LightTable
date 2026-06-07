@@ -162,3 +162,33 @@ test('CM6 live — comment seam (clojure toggle + line, via the editor seam)', a
   await lt('lineComment');
   expect(await lt('val')).toBe(';; (defn f [] 1)');
 });
+
+// ADR 0009 — find/replace seam on CM6 (cm6.search + a highlight decoration layer).
+test('CM6 live — find seam (search / next / prev / highlight / replace)', async () => {
+  await lt('setVal', 'cat dog cat dog cat');
+  await lt('moveCursor', { line: 0, ch: 0 });
+  // search → first match at/after cursor, and ALL matches highlighted
+  expect(await lt('search', 'cat', {})).toEqual({ from: 0, to: 3 });
+  expect(await lt('selectionText')).toBe('cat');
+  expect(await lt('searchMatchCount')).toBe(3);     // 3 "cat" highlighted
+  // next wraps forward through the matches
+  expect(await lt('findNext', 'cat', {})).toEqual({ from: 8, to: 11 });
+  expect(await lt('findNext', 'cat', {})).toEqual({ from: 16, to: 19 });
+  expect(await lt('findNext', 'cat', {})).toEqual({ from: 0, to: 3 }); // wrap
+  // prev goes back
+  expect(await lt('findPrev', 'cat', {})).toEqual({ from: 16, to: 19 });
+  // clear removes the highlight
+  await lt('clearSearch');
+  expect(await lt('searchMatchCount')).toBe(0);
+});
+
+test('CM6 live — find seam (case-insensitive default + replace-all)', async () => {
+  await lt('setVal', 'Cat cat CAT');
+  expect(await lt('search', 'cat', {})).toEqual({ from: 0, to: 3 }); // case-insensitive
+  expect(await lt('searchMatchCount')).toBe(3);
+  // replace-all in one undo step
+  expect(await lt('replaceSearch', 'cat', 'dog', {}, true)).toBe(3);
+  expect(await lt('val')).toBe('dog dog dog');
+  await lt('undo');
+  expect(await lt('val')).toBe('Cat cat CAT');     // single undo reverts all
+});
