@@ -12,6 +12,7 @@
     "shadow-cljs": "3.4.11"
   },
   "dependencies": {
+    "@codemirror/state": "^6.6.0",
     "alien-signals": "^3.2.1"
   }
 }
