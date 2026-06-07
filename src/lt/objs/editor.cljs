@@ -648,7 +648,9 @@
 ;; Object
 ;;*********************************************************
 
-(load/js "core/node_modules/codemirror/lib/codemirror.js" :sync)
+;; The CM5 library is no longer loaded into the renderer — the editor is CM6 (the
+;; @codemirror/* packages, bundled by shadow). (One background worker still requires
+;; codemirror's runmode StringStream to parse .behaviors files — ADR 0009 follow-up.)
 
 (object* ::editor
          :tags #{:editor :editor.inline-result :editor.keys.normal}
@@ -673,11 +675,11 @@
                                            (cm6-fold/extension)
                                            (cm6-modes/initial lang-compartment (:mime info))])
                        ;; Seed from :content (transient editors) or, for a file editor,
-                       ;; from the doc's text (opener passes :doc, not :content). The
-                       ;; doc object remains the manager's record (mtime); editing +
-                       ;; save flow through the CM6 view/backend.
+                       ;; from the doc's :content (opener passes :doc, not :content). The
+                       ;; doc object is the manager's record (path/mtime); editing + save
+                       ;; flow through the CM6 view/backend.
                        seed (or (:content info)
-                                (when-let [d (:doc info)] (.getValue (:doc (deref d))))
+                                (when-let [d (:doc info)] (:text (deref d)))
                                 "")
                        state (cm6/make-state seed extra)
                        view (cm6-view/create-view nil {:state state})]
@@ -934,22 +936,8 @@
 ;; bracket-matching/closing, comments, folding, active-line, and language modes
 ;; (cm6.modes) via the object*'s initial extensions.
 
-(behavior ::load-addon
-          :triggers #{:object.instant-load}
-          :desc "App: Load CodeMirror addon path(s)"
-          :params [{:label "path(s)"
-                    :example "edit/matchtags.js"}]
-          :type :user
-          :reaction (fn [this path]
-                      (let [paths (map #(files/join (files/lt-home)
-                                                    "core/node_modules/codemirror/addon" %)
-                                       (if (coll? path) path [path]))]
-                        (object/call-behavior-reaction :lt.objs.plugins/load-js
-                                                       this
-                                                       (filter #(= (files/ext %) "js") paths))
-                        (object/call-behavior-reaction :lt.objs.plugins/load-css
-                                                       this
-                                                       (filter #(= (files/ext %) "css") paths)))))
+;; ::load-addon (App: Load CodeMirror addon path) removed with CM5 — CM6 features
+;; come from @codemirror packages in the editor's extension set, not loadable addons.
 
 ;; ::set-rulers behavior removed with CM5 (called .getOption + loaded the CM5
 ;; rulers addon; no CM6 counterpart wired).

@@ -1,6 +1,9 @@
 (ns lt.objs.document
-  "Provide document object for wrapping CodeMirror documents. See
-  http://codemirror.org/doc/manual.html#api_doc for more"
+  "Document object — file content + metadata (ADR 0009). CM5 wrapped a
+  CodeMirror.Doc here; CM6 keeps the content in the EditorView, so a document is
+  now just the manager's record: the initial `:content` (which a CM6 editor seeds
+  from), the path/mtime/mime, and the sub-doc/close bookkeeping. Editing and save
+  flow through the editor backend, not the document."
   (:require [lt.object :as object]
             [lt.objs.files :as files]
             [lt.objs.popup :as popup])
@@ -14,24 +17,16 @@
 
 (def doc-keys [:line-ending :mime])
 
-(defn create* [info]
-  (.Doc js/CodeMirror (:content info) (:mime info)))
-
-(defn ->cm-doc [doc]
-  (-> @doc :doc))
-
-(defn linked* [doc info]
-  (let [{:keys [from to shared-history type]} info]
-    (.linkedDoc (->cm-doc doc) (clj->js {:from from
-                                 :to to
-                                 :sharedHist shared-history
-                                 :mode type}))))
-
 (object/object* ::document
                 :sub-docs #{::this}
                 :tags #{:document}
                 :init (fn [this info]
-                        (object/merge! this (merge (dissoc info :content) {:doc (or (:doc info) (create* info))}))
+                        ;; :content is RESERVED by lt.object (it becomes the object's
+                        ;; rendered DOM = the :init return). Store the document text
+                        ;; under :text so the CM6 editor can seed from it.
+                        (object/merge! this (-> info
+                                                (dissoc :content)
+                                                (assoc :text (:content info))))
                         nil))
 
 
@@ -47,7 +42,6 @@
           :triggers #{:close.force}
           :reaction (fn [this]
                       (when-let [root (:root @this)]
-                        (.unlinkDoc (->cm-doc this) (->cm-doc root))
                         (object/update! root [:sub-docs] disj this))
                       (object/destroy! this)))
 
@@ -83,60 +77,19 @@
 (defn create-sub
   ([doc] (create-sub doc nil))
   ([doc info]
+   ;; CM5 shared one Doc via linkedDoc (split views edited together). CM6 has no
+   ;; detachable shared Doc — a sub-doc is an INDEPENDENT copy of the content;
+   ;; live split-view sync is the deferred lt.editor.cm6.document integration.
    (let [info (merge default-linked-doc-options info)
          neue (create (merge (select-keys @doc doc-keys)
+                             {:content (:text @doc)}
                              info
-                             {:doc (linked* doc info) :root doc}))]
+                             {:root doc}))]
      (object/add-tags neue [:document.linked])
      (object/update! doc [:sub-docs] conj neue))))
 
-(defn ->snapshot [doc]
-  (let [d (->cm-doc doc)
-        lines (transient [])]
-    (.eachLine d (fn [line]
-                   (conj! lines (.-text line))
-                   nil))
-    {:version (.changeGeneration d)
-     :lines (persistent! lines)
-     :doc doc}))
-
-
-(defn latest-snapshot? [snapshot]
-  (= (:version snapshot) (-> (:doc snapshot)
-                             (->cm-doc)
-                             (.changeGeneration))))
-
-(comment
-  (def v1 (->snapshot orig))
-  (latest-snapshot? v1)
-
-  (set-val orig "hey\nzomg2\n\n\nwoot4\ncool\nlah")
-  (def v4 (->snapshot orig))
-
-
-  (def hist (.getHistory (->cm-doc orig)))
-
-  (-> hist
-      (aget "done")
-      (aget 0)
-      ;(aget "changes")
-      ;(aget 0)
-      )
-  (aget hist "done"))
-
-
-(defn ->val [doc]
-  (.getValue (->cm-doc doc)))
-
-(defn set-val [doc v]
-  (.setValue (->cm-doc doc) v))
-
-(defn replace
-  ([d from v]
-   (.replaceRange (->cm-doc d) v (clj->js from)))
-  ([d from to v]
-   (.replaceRange (->cm-doc d) v (clj->js from) (clj->js to))))
-
+;; ->snapshot / latest-snapshot? / ->val / set-val / replace (all CM5-Doc based,
+;; no callers) removed with CM5 — the editor backend is the source of truth.
 
 ;;***************************************************
 ;; Manager
