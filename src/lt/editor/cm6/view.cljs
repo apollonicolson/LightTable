@@ -26,6 +26,14 @@
 (def ^:private cm-redo (.-redo cm-commands))
 (def ^:private isolate-history (.-isolateHistory cm-commands))
 
+(def editing-keymap
+  "CM6's standard editing keybindings (cursor motion, Enter/Backspace/Delete,
+  selection, indent) + history (undo/redo) — the in-editor keys CM5 handled
+  internally. LightTable's command keybindings still flow through its own
+  Mousetrap layer at the document level, independent of the backend."
+  (.of (.-keymap cm-view)
+       (.concat (.-defaultKeymap cm-commands) (.-historyKeymap cm-commands))))
+
 (defn create-view
   "Build an EditorView. `parent` (a DOM element) is optional — when nil the view
   is detached and its `.dom` can be inserted later (the editor object* returns it

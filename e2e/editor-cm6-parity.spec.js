@@ -82,6 +82,17 @@ test('CM6 live — history (undo / redo)', async () => {
   expect(await lt('val')).toBe('abXYZ\ncde\nf');
 });
 
+test('CM6 live — keymap (real keyboard editing: typing / Enter / Backspace)', async () => {
+  await lt('setVal', '');
+  await win.click('.cm-content');            // focus the CM6 contenteditable
+  await win.keyboard.type('abc');
+  await win.keyboard.press('Enter');
+  await win.keyboard.type('d');
+  expect(await lt('val')).toBe('abc\nd');     // defaultKeymap: Enter inserts newline
+  await win.keyboard.press('Backspace');
+  expect(await lt('val')).toBe('abc\n');       // defaultKeymap: Backspace deletes
+});
+
 test('CM6 live — events (edits raise :change to LightTable behaviors)', async () => {
   const before = await lt('changeCount');
   await lt('replace', { line: 0, ch: 0 }, { line: 0, ch: 0 }, 'Q');

@@ -788,7 +788,8 @@
                                   (fn [update]
                                     (when (.-docChanged update) (object/raise obj :change update))
                                     (when (.-selectionSet update) (object/raise obj :move update))))
-                         extra (.concat (cm6-options/initial-extensions compartments) #js [events])
+                         extra (.concat (cm6-options/initial-extensions compartments)
+                                        #js [events cm6-view/editing-keymap])
                          state (cm6/make-state (or (:content info) "") extra)
                          view (cm6-view/create-view nil {:state state})]
                      (object/merge! obj {:ed view
