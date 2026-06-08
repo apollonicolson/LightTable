@@ -34,4 +34,12 @@
                   (is (some #(str/includes? (scopes-str %) "comment.line.hash.toy") tokens)
                       "the # comment got comment.line.hash.toy")
                   (is (some? rule-stack) "a rule stack is returned for multi-line continuation")
+                  ;; scope → highlight-class bridge
+                  (let [spans   (tm/line-spans tokens)
+                        classes (set (map :class spans))]
+                    (is (contains? classes "tok-keyword") "def → tok-keyword span")
+                    (is (contains? classes "tok-string")  "string → tok-string span")
+                    (is (contains? classes "tok-comment") "comment → tok-comment span")
+                    (is (every? #(and (number? (:start %)) (number? (:end %))) spans)
+                        "spans carry numeric column ranges for the CM6 layer"))
                   (done))))))))))
