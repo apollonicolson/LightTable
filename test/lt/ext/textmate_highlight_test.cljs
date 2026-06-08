@@ -34,4 +34,8 @@
                   (is (= "tok-comment" (cls-at 15)) "comment STILL active on line 2 — rule state threaded across lines")
                   ;; after `*/ ` on line 2, `def y` is keyword again
                   (is (= "tok-keyword" (cls-at (.indexOf text "def y"))) "keyword after the block closes")
+                  ;; spans → CM6 mark DecorationSet
+                  (let [decos (hl/decorations-for grammar text)]
+                    (is (= (count spans) (.-size decos))
+                        "every span became a CM6 mark decoration (RangeSet)"))
                   (done))))))))))

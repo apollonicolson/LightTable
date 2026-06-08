@@ -6,7 +6,10 @@
   data ([{:from :to :class}]); the CM6 layer turns it into mark decorations. Pure +
   node-gated; lives on the adapter side (depends on lt.ext.textmate)."
   (:require [lt.ext.textmate :as tm]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            ["@codemirror/view" :as cm-view]))
+
+(def ^:private Decoration (.-Decoration cm-view))
 
 (defn spans-for-text
   "Tokenize all lines of `text` with `grammar` → absolute highlight spans
@@ -23,3 +26,19 @@
                                                :class  (:class s)}))
                            acc (tm/line-spans tokens))]
           (recur (rest ls) (+ offset (count line) 1) rule-stack acc'))))))
+
+(defn spans->decorations
+  "Highlight spans [{:from :to :class}] → a CM6 mark DecorationSet (a RangeSet) the
+  editor applies. Empty `:to == :from` spans are dropped (CM6 marks must be non-empty)."
+  [spans]
+  (let [ranges (->> spans
+                    (filter #(< (:from %) (:to %)))
+                    (sort-by :from)
+                    (map (fn [s] (.range (.mark Decoration #js {:class (:class s)}) (:from s) (:to s))))
+                    (into-array))]
+    (.set Decoration ranges true)))
+
+(defn decorations-for
+  "Whole-document text + grammar → a CM6 mark DecorationSet."
+  [grammar text]
+  (spans->decorations (spans-for-text grammar text)))
