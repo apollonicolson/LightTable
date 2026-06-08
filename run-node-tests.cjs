@@ -32,6 +32,10 @@ for (const k of [
 ]) {
   if (dom.window[k] !== undefined) global[k] = dom.window[k];
 }
+// CM6's isScrolledToBottom references the global `Window` constructor during
+// rAF-driven measure; without it a leftover measure callback throws
+// "Window is not defined" and (in a long async test) crashes the run.
+global.Window = dom.window.Window || dom.window.constructor;
 // rAF shim (some effect/render code schedules on it)
 global.requestAnimationFrame = (cb) => setTimeout(() => cb(Date.now()), 16);
 global.cancelAnimationFrame = (id) => clearTimeout(id);
