@@ -81,3 +81,34 @@
                     (->Disposable (fn [] (swap! listeners disj listener))))
          :fire    (fn [data] (doseq [l @listeners] (l data)))
          :dispose (fn [] (reset! listeners #{}))}))
+
+;; ── Language-feature value types (mutable data holders extensions construct) ──
+;; CompletionItemKind / DiagnosticSeverity enums (note: severities differ from LSP —
+;; VSCode Error=0, LSP Error=1; the languages layer converts).
+(def CompletionItemKind
+  #js {:Text 0 :Method 1 :Function 2 :Constructor 3 :Field 4 :Variable 5 :Class 6
+       :Interface 7 :Module 8 :Property 9 :Unit 10 :Value 11 :Enum 12 :Keyword 13
+       :Snippet 14 :Color 15 :File 16 :Reference 17 :Folder 18 :EnumMember 19
+       :Constant 20 :Struct 21 :Event 22 :Operator 23 :TypeParameter 24})
+
+(def DiagnosticSeverity #js {:Error 0 :Warning 1 :Information 2 :Hint 3})
+
+(defn completion-item [label kind]
+  #js {:label label :kind kind :insertText nil :detail nil
+       :documentation nil :sortText nil :filterText nil})
+
+(defn diagnostic [range message severity]
+  #js {:range range :message message :severity (or severity 0)
+       :source nil :code nil})
+
+(defn hover [contents range]
+  #js {:contents contents :range range})
+
+(defn location [uri range]
+  #js {:uri uri :range range})
+
+(defn markdown-string [value]
+  (let [obj #js {:value (or value "") :isTrusted false}]
+    (set! (.-appendText obj) (fn [s] (set! (.-value obj) (str (.-value obj) s)) obj))
+    (set! (.-appendMarkdown obj) (fn [s] (set! (.-value obj) (str (.-value obj) s)) obj))
+    obj))
