@@ -79,6 +79,12 @@
 
 (defn journal-snapshot [] @journal)
 
+(defn install-grants!
+  "Replace the whole grant map (profile → principal → #{capability}) — for loading
+  persisted grants from a profile's state root."
+  [m]
+  (reset! grants m))
+
 (defn reset-gate! []
   (reset! grants {}) (reset! active-profile* :default)
   (reset! journal []) (reset! prompt-fn nil))
