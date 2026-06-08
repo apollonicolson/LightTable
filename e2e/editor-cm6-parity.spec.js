@@ -449,3 +449,22 @@ test('VSCode ext host — window message + config + live onDidChangeTextDocument
   await lt('setVal', 'abcd');
   await expect.poll(() => lt('extApiCall', 'getChanges')).toBeGreaterThan(0);
 });
+
+// ADR 0011 phase 4 — a VSCode language extension drives the CM6 renderers (the
+// convergence with ADR 0010 slices 1-4): its completion provider feeds the hint
+// list, and its DiagnosticCollection.set squiggles in the live editor.
+test('VSCode ext host — language provider drives live completions + diagnostics', async () => {
+  await lt('extReset');
+  await lt('openCm6', '(ns a)\n(def x 1)\n');
+  await lt('wsTrackActive', 'file:///lang.clj');
+  expect(await lt('extLoad', path.join(ROOT, 'test/fixtures/lang-extension'))).toBe(true);
+  // completion provider → hint list
+  await lt('extProvideCompletion', 'file:///lang.clj', 0, 0);
+  const hints = await lt('editorHints');
+  expect(hints).toContain('defn');
+  expect(hints).toContain('defmacro');
+  // DiagnosticCollection.set → live squiggle (via cm6.diagnostics)
+  await lt('extApiCall', 'setDiag', 'file:///lang.clj');
+  await expect.poll(() => lt('diagnosticCount')).toBeGreaterThan(0);
+  expect(await win.locator('.cm-diag-error').count()).toBeGreaterThanOrEqual(1);
+});

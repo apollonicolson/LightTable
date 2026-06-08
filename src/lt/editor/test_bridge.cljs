@@ -25,12 +25,16 @@
             [lt.ext.vscode.command-bridge :as ext-cmd-bridge]
             [lt.ext.vscode.workspace :as ext-ws]
             [lt.ext.vscode.window :as ext-window]
+            [lt.ext.vscode.languages :as ext-langs]
+            [lt.ext.vscode.document :as ext-doc]
+            [lt.ext.vscode.types :as ext-types]
             [lt.objs.tabs :as tabs])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (defn- ed [] (pool/last-active))
 
 (defonce ^:private ext-active (atom nil))
+(defonce ^:private ext-uri->editor (atom {}))
 
 ;; Live doc-sync: an editor's CM6 :change → vscode.workspace onDidChangeTextDocument
 ;; (ADR 0011 phase 3b). Attached to an editor by wsTrackActive with its ::ws-uri.
@@ -149,9 +153,29 @@
        :extLoad       (fn [dir]
                         (ext-host/install-vscode! (ext-api/make-vscode))
                         (ext-cmd-bridge/install!)
+                        ;; phase 4b: route DiagnosticCollection sets to the live editor
+                        (ext-langs/set-diagnostic-sink!
+                         (fn [uri diags]
+                           (when-let [e (get @ext-uri->editor uri)]
+                             (editor/set-diagnostics e diags))))
                         (let [active (ext-host/activate! (ext-host/read-manifest dir))]
                           (reset! ext-active active)
                           (boolean active)))
+       ;; phase 4b: invoke language completion providers for the doc at `uri`, map to
+       ;; hints, cache them on the editor (the ::lsp-hints :hints+ source renders them)
+       :extProvideCompletion
+       (fn [uri line ch]
+         (js/Promise.
+          (fn [resolve _reject]
+            (if-let [e (get @ext-uri->editor uri)]
+              (let [d   (ext-doc/make-text-document {:uri uri :languageId "clojure"
+                                                     :text (editor/->val e)})
+                    pos (ext-types/->Position line ch)]
+                (.then (ext-langs/provide-completions d pos)
+                       (fn [items]
+                         (object/merge! e {:lsp/completions (ext-langs/completion-items->hints items)})
+                         (resolve (.-length items)))))
+              (resolve 0)))))
        ;; run a command through the LIVE LightTable command system (proves the
        ;; extension's vscode command became a real lt.objs.command), return result.
        :extExec       (fn [id & args] (apply cmd/exec! (keyword id) args))
@@ -161,6 +185,7 @@
                                        (apply (aget (:api a) k) args)))
        ;; phase 3b: window/workspace test access + live doc tracking
        :extReset      (fn [] (ext-window/reset-window!) (ext-ws/reset-workspace!)
+                        (ext-langs/reset-languages!) (reset! ext-uri->editor {})
                         (reset! ext-active nil) nil)
        :wsSetConfig   (fn [m] (ext-ws/set-config! (js->clj m)) nil)
        :windowMessages (fn [] (clj->js @ext-window/message-log))
@@ -169,6 +194,7 @@
                           (ext-ws/open-document! {:uri uri :languageId "clojure"
                                                   :text (editor/->val e)})
                           (object/merge! e {::ws-uri uri})
+                          (swap! ext-uri->editor assoc uri e)
                           (object/add-behavior! e ::ws-doc-sync))
                         nil)
        ;; request LSP completion at (line,character) for the active editor; resolves
