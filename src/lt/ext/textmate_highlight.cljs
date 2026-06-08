@@ -7,9 +7,12 @@
   node-gated; lives on the adapter side (depends on lt.ext.textmate)."
   (:require [lt.ext.textmate :as tm]
             [clojure.string :as str]
-            ["@codemirror/view" :as cm-view]))
+            ["@codemirror/view" :as cm-view]
+            ["@codemirror/state" :as cm-state]))
 
 (def ^:private Decoration (.-Decoration cm-view))
+(def ^:private EditorView (.-EditorView cm-view))
+(def ^:private StateField (.-StateField cm-state))
 
 (defn spans-for-text
   "Tokenize all lines of `text` with `grammar` → absolute highlight spans
@@ -42,3 +45,18 @@
   "Whole-document text + grammar → a CM6 mark DecorationSet."
   [grammar text]
   (spans->decorations (spans-for-text grammar text)))
+
+(defn highlight-extension
+  "A CM6 editor extension that syntax-highlights with `grammar`: a StateField holding
+  the mark DecorationSet, recomputed on every doc change and provided to the editor
+  via EditorView.decorations. (Whole-document retokenize per change — viewport/
+  incremental is a perf follow-on.) The editor installs this via its extension seam;
+  the adapter owns it, so the core never depends on lt.ext."
+  [grammar]
+  (.define StateField
+           #js {:create  (fn [state] (decorations-for grammar (.toString (.-doc state))))
+                :update  (fn [value tr]
+                           (if (.-docChanged tr)
+                             (decorations-for grammar (.toString (.. tr -state -doc)))
+                             (.map value (.-changes tr))))
+                :provide (fn [f] (.from (.-decorations EditorView) f))}))
