@@ -1,0 +1,11 @@
+{
+  "name": "sample-ext",
+  "publisher": "lt-test",
+  "version": "0.0.1",
+  "engines": { "vscode": "^1.0.0" },
+  "main": "./extension.js",
+  "activationEvents": ["onLanguage:clojure", "onCommand:sample.hello"],
+  "contributes": {
+    "commands": [{ "command": "sample.hello", "title": "Hello" }]
+  }
+}
