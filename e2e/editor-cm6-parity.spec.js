@@ -507,3 +507,21 @@ test('VSCode ext host — workspace.fs is gated (deny → grant → allow)', asy
   const allowed = await lt('extApiCall', 'tryRead', target);
   expect(allowed).toContain('"name": "fs-ext"');   // the real file content
 });
+
+// Security control center (commands) — the gate's grants + journal surfaced as
+// real LightTable commands (the command-driven first cut of the permission center).
+test('Security control center — :security.* commands surface the gate', async () => {
+  await lt('gateReset');
+  await lt('gateGrant', 'ext.demo', 'fs.read', '/proj');
+  await lt('gateGrant', 'ext.demo', 'net', 'example.com');
+  const grants = await lt('extExec', 'security.grants');     // via cmd/exec!
+  expect(grants['ext.demo']).toBeTruthy();
+  expect(grants['ext.demo'].length).toBe(2);
+  const summary = await lt('extExec', 'security.summary');
+  expect(summary['active-profile']).toBe('default');
+  expect(summary.grants.default['ext.demo']).toBe(2);
+  // revoke clears it
+  await lt('extExec', 'security.revoke-all', 'ext.demo');
+  const after = await lt('extExec', 'security.grants');
+  expect(after['ext.demo'] || []).toHaveLength(0);
+});

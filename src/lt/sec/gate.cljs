@@ -71,6 +71,14 @@
                          :capability capability :decision decision})
     (not= decision :deny)))
 
+(defn grants-snapshot
+  "The full grant map (profile → principal → #{capability}) — for the control
+  center's cross-principal/profile views."
+  []
+  @grants)
+
+(defn journal-snapshot [] @journal)
+
 (defn reset-gate! []
   (reset! grants {}) (reset! active-profile* :default)
   (reset! journal []) (reset! prompt-fn nil))

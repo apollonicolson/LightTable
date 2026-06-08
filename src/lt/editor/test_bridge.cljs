@@ -29,6 +29,7 @@
             [lt.ext.vscode.document :as ext-doc]
             [lt.ext.vscode.types :as ext-types]
             [lt.sec.gate :as gate]
+            [lt.sec.commands]   ; registers the :security.* control-center commands
             [lt.objs.tabs :as tabs])
   (:require-macros [lt.macros :refer [behavior]]))
 
