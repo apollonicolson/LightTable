@@ -8,7 +8,8 @@
   (:require [lt.ext.vscode.types :as t]
             [clojure.string :as str]))
 
-(defonce ^:private providers (atom {:completion [] :hover [] :definition []}))
+(defonce ^:private providers (atom {:completion [] :hover [] :definition []
+                                    :document-symbol [] :references []}))
 (defonce ^:private diag-sink (atom nil))   ; (fn [uri-string lsp-diagnostics-js])
 
 (defn set-diagnostic-sink! [f] (reset! diag-sink f))
@@ -50,6 +51,25 @@
 
 (defn provide-definition [document position]
   (.then (call-all :definition document position "provideDefinition") first))
+
+(defn provide-document-symbols
+  "DocumentSymbolProvider.provideDocumentSymbols(document, token) — document-level,
+  no position. Returns the first matching provider's DocumentSymbol[]|SymbolInformation[]."
+  [document]
+  (let [calls (map (fn [e] (.resolve js/Promise ((aget (:provider e) "provideDocumentSymbols") document nil)))
+                   (matching :document-symbol (.-languageId document)))]
+    (.then (.all js/Promise (into-array calls))
+           (fn [results] (first (remove nil? (array-seq results)))))))
+
+(defn provide-references
+  "ReferenceProvider.provideReferences(document, position, context, token). Flattens
+  Location[] from all matching providers."
+  [document position]
+  (let [ctx   #js {:includeDeclaration true}
+        calls (map (fn [e] (.resolve js/Promise ((aget (:provider e) "provideReferences") document position ctx nil)))
+                   (matching :references (.-languageId document)))]
+    (.then (.all js/Promise (into-array calls))
+           (fn [results] (into-array (mapcat #(array-seq %) (remove nil? (array-seq results))))))))
 
 ;; ── Result → CM6 renderer mappings ───────────────────────────────────────────
 (defn- label-of [it]
@@ -97,6 +117,29 @@
          :line      (.. r -start -line)
          :character (.. r -start -character)}))))
 
+(defn document-symbols->data
+  "VSCode DocumentSymbol[] (hierarchical: .name .kind .range .children) |
+  SymbolInformation[] (.name .kind .location) → serializable clj outline."
+  [syms]
+  (when syms
+    (mapv (fn [s]
+            (let [r        (or (.-range s) (some-> (.-location s) .-range))
+                  children (.-children s)]
+              (cond-> {:name (.-name s) :kind (.-kind s)
+                       :line (some-> r .-start .-line)}
+                (and children (pos? (.-length children)))
+                (assoc :children (document-symbols->data children)))))
+          (array-seq syms))))
+
+(defn references->data
+  "VSCode Location[] → serializable clj [{:uri :line :character}]."
+  [locs]
+  (mapv (fn [l] (let [r (.-range l) uri (.-uri l)]
+                  {:uri       (if (string? uri) uri (.toString uri))
+                   :line      (.. r -start -line)
+                   :character (.. r -start -character)}))
+        (array-seq locs)))
+
 ;; ── DiagnosticCollection (→ cm6.diagnostics via the sink) ────────────────────
 (defn- uri-key [uri] (if (string? uri) uri (.toString uri)))
 
@@ -134,8 +177,11 @@
   #js {:registerCompletionItemProvider (fn [sel prov & _tc] (register :completion sel prov))
        :registerHoverProvider          (fn [sel prov] (register :hover sel prov))
        :registerDefinitionProvider     (fn [sel prov] (register :definition sel prov))
+       :registerDocumentSymbolProvider (fn [sel prov] (register :document-symbol sel prov))
+       :registerReferenceProvider      (fn [sel prov] (register :references sel prov))
        :createDiagnosticCollection     (fn [name] (create-diagnostic-collection name))})
 
 (defn reset-languages! []
-  (reset! providers {:completion [] :hover [] :definition []})
+  (reset! providers {:completion [] :hover [] :definition []
+                     :document-symbol [] :references []})
   (reset! diag-sink nil))

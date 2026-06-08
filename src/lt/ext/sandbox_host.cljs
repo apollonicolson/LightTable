@@ -35,6 +35,10 @@
                            (fn [h] (reply (languages/hover->text h))))
         :definition (.then (languages/provide-definition doc pos)
                            (fn [d] (reply (languages/definition->location d))))
+        :symbols    (.then (languages/provide-document-symbols doc)
+                           (fn [s] (reply (languages/document-symbols->data s))))
+        :references (.then (languages/provide-references doc pos)
+                           (fn [r] (reply (languages/references->data r))))
         nil))))
 
 (defn start!
