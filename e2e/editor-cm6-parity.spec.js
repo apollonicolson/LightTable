@@ -488,3 +488,22 @@ test('VSCode ext host — runs the real MS completions-sample', async () => {
   // the snippet completion's insertText (a SnippetString) surfaced as its .value
   expect(hints.some((h) => h.includes('Good ${1|morning'))).toBe(true);
 });
+
+// Capability gate live — vscode.workspace.fs is GATED (the authority layer's first
+// real consumer). An extension reading a file is DENIED by default (graceful: a
+// rejected promise it catches), and ALLOWED only after the gate grants fs.read to
+// its principal. Default-deny enforcement, end-to-end.
+test('VSCode ext host — workspace.fs is gated (deny → grant → allow)', async () => {
+  await lt('gateReset');
+  const extDir = path.join(ROOT, 'test/fixtures/fs-extension');
+  expect(await lt('extLoad', extDir)).toBe(true);
+  const target = path.join(extDir, 'package.json');
+  // default-deny: the read is refused, surfaced as a caught error (graceful)
+  const denied = await lt('extApiCall', 'tryRead', target);
+  expect(denied).toContain('DENIED');
+  expect(denied).toContain('capability denied');
+  // grant fs.read on the extension's dir to its principal → now allowed
+  await lt('gateGrant', 'lt-test.fs-ext', 'fs.read', extDir);
+  const allowed = await lt('extApiCall', 'tryRead', target);
+  expect(allowed).toContain('"name": "fs-ext"');   // the real file content
+});

@@ -5,7 +5,8 @@
   Node-loadable + tested; the live wiring (editor :change → notify-change!) is the
   editor-coupled bridge."
   (:require [lt.ext.vscode.document :as doc]
-            [lt.ext.vscode.types :as t]))
+            [lt.ext.vscode.types :as t]
+            [lt.ext.vscode.fs :as vfs]))
 
 (defonce ^:private docs      (atom {}))   ; uri -> TextDocument
 (defonce ^:private listeners (atom {:open #{} :change #{} :close #{}}))
@@ -54,16 +55,21 @@
                    (swap! config assoc (str prefix key) value)
                    (.resolve js/Promise nil))}))
 
-(defn ns-object []
+(defn ns-object
+  "The vscode.workspace object. `principal` (the extension id) is bound into the
+  gated `fs` FileSystem; the no-arg form is principal-less (fs default-denies)."
+  ([] (ns-object nil))
+  ([principal]
   (let [ws #js {:getConfiguration        (fn [& [section]] (get-configuration section))
                 :onDidOpenTextDocument   (fn [l] (on :open l))
                 :onDidChangeTextDocument (fn [l] (on :change l))
                 :onDidCloseTextDocument  (fn [l] (on :close l))
-                :workspaceFolders        #js []}]
+                :workspaceFolders        #js []
+                :fs                      (vfs/make-file-system principal)}]
     ;; textDocuments is a live getter in vscode, not a static array.
     (js/Object.defineProperty ws "textDocuments"
                               #js {:get (fn [] (clj->js (vec (vals @docs)))) :enumerable true})
-    ws))
+    ws)))
 
 (defn reset-workspace! []
   (reset! docs {})

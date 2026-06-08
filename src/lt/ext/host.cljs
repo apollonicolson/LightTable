@@ -12,24 +12,34 @@
 (def ^:private fs   (js/require "fs"))
 (def ^:private path (js/require "path"))
 
-;; The injected `vscode` module: extensions `require('vscode')` and get this shim.
-;; In a real sandboxed-renderer host this is provided over the contextBridge; here
-;; (in-renderer/node de-risking) we patch Node's module loader once.
-(defonce ^:private vscode-shim (atom nil))
+;; The injected `vscode` module: extensions `require('vscode')` and get the shim
+;; that is current when their module loads. Per-extension shims (bound to the
+;; extension's principal for capability checks) are set right before `activate!`
+;; requires the extension, which captures it in `const vscode = require('vscode')`.
+;; In a real sandboxed-renderer host this is the contextBridge; here (in-renderer/
+;; node de-risking) we patch Node's module loader once.
+(defonce ^:private current-shim (atom nil))
 
-(defn install-vscode!
-  "Make `require('vscode')` return `shim` for all extensions. Idempotent."
-  [shim]
-  (reset! vscode-shim shim)
+(defn ensure-loader!
+  "Patch Node's module loader (idempotently) so require('vscode') returns the
+  current shim."
+  []
   (let [Module (js/require "module")]
     (when-not (.-_ltVscodePatched Module)
       (let [orig (.-_load Module)]
         (set! (.-_load Module)
               (fn [request parent is-main]
                 (if (= request "vscode")
-                  @vscode-shim
+                  @current-shim
                   (.call orig Module request parent is-main))))
-        (set! (.-_ltVscodePatched Module) true))))
+        (set! (.-_ltVscodePatched Module) true)))))
+
+(defn install-vscode!
+  "Install the loader and set a shared shim (back-compat for the principal-less
+  path). For per-extension principals, pass the shim to `activate!`."
+  [shim]
+  (ensure-loader!)
+  (reset! current-shim shim)
   shim)
 
 (defn read-manifest
@@ -57,14 +67,19 @@
        :workspaceState  (memento)})
 
 (defn activate!
-  "Load the extension's main module and call `activate(context)`. Returns an active
-  record `{:desc :module :context :api :active? true}`."
-  [desc]
-  (let [main-path (.resolve path (:dir desc) (:main desc))
-        mod       (js/require main-path)
-        ctx       (make-context desc)
-        api       (when (fn? (.-activate mod)) ((.-activate mod) ctx))]
-    {:desc desc :module mod :context ctx :api api :active? true}))
+  "Load the extension's main module and call `activate(context)`. With a `shim`,
+  binds it as the current `vscode` for this extension (so its capability principal
+  is correct) before requiring. Returns `{:desc :module :context :api :active?}`."
+  ([desc]
+   (let [main-path (.resolve path (:dir desc) (:main desc))
+         mod       (js/require main-path)
+         ctx       (make-context desc)
+         api       (when (fn? (.-activate mod)) ((.-activate mod) ctx))]
+     {:desc desc :module mod :context ctx :api api :active? true}))
+  ([desc shim]
+   (ensure-loader!)
+   (reset! current-shim shim)
+   (activate! desc)))
 
 (defn deactivate!
   "Dispose the context's subscriptions and call `deactivate()` if present."

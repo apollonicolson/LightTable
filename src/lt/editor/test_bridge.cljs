@@ -28,6 +28,7 @@
             [lt.ext.vscode.languages :as ext-langs]
             [lt.ext.vscode.document :as ext-doc]
             [lt.ext.vscode.types :as ext-types]
+            [lt.sec.gate :as gate]
             [lt.objs.tabs :as tabs])
   (:require-macros [lt.macros :refer [behavior]]))
 
@@ -151,16 +152,22 @@
        ;; VSCode extension host (ADR 0011 phase 2b): load an extension from `dir`,
        ;; injecting the vscode shim + bridging its commands into lt.objs.command.
        :extLoad       (fn [dir]
-                        (ext-host/install-vscode! (ext-api/make-vscode))
                         (ext-cmd-bridge/install!)
                         ;; phase 4b: route DiagnosticCollection sets to the live editor
                         (ext-langs/set-diagnostic-sink!
                          (fn [uri diags]
                            (when-let [e (get @ext-uri->editor uri)]
                              (editor/set-diagnostics e diags))))
-                        (let [active (ext-host/activate! (ext-host/read-manifest dir))]
+                        ;; per-extension shim bound to its principal (for the gate)
+                        (let [desc   (ext-host/read-manifest dir)
+                              shim   (ext-api/make-vscode (:id desc))
+                              active (ext-host/activate! desc shim)]
                           (reset! ext-active active)
                           (boolean active)))
+       ;; capability gate controls (the authority layer)
+       :gateGrant     (fn [principal kind scope] (gate/grant! principal (gate/cap (keyword kind) scope)) nil)
+       :gateReset     (fn [] (gate/reset-gate!) nil)
+       :gateJournalCount (fn [] (count @gate/journal))
        ;; phase 4b: invoke language completion providers for the doc at `uri`, map to
        ;; hints, cache them on the editor (the ::lsp-hints :hints+ source renders them)
        :extProvideCompletion

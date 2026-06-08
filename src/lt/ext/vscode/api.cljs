@@ -10,9 +10,11 @@
             [lt.ext.vscode.languages :as languages]))
 
 (defn make-vscode
-  "Build the `vscode` shim object. Shared across extensions (per-extension state
-  arrives via the ExtensionContext, not this module — matching VSCode)."
-  []
+  "Build the `vscode` shim object for an extension `principal` (used by the gated
+  effect APIs, e.g. workspace.fs). The no-arg form is principal-less (effectful
+  APIs default-deny). Per-extension state arrives via the ExtensionContext."
+  ([] (make-vscode nil))
+  ([principal]
   #js {:Position      types/Position
        :Range         types/make-range
        :Uri           types/Uri
@@ -20,7 +22,7 @@
        :EventEmitter  types/event-emitter
        :commands      (commands/ns-object)
        :window        (window/ns-object)
-       :workspace     (workspace/ns-object)
+       :workspace     (workspace/ns-object principal)
        :languages     (languages/ns-object)
        ;; language-feature value types
        :CompletionItem      types/completion-item
@@ -30,4 +32,4 @@
        :Hover               types/hover
        :Location            types/location
        :MarkdownString      types/markdown-string
-       :SnippetString       types/snippet-string})
+       :SnippetString       types/snippet-string}))
