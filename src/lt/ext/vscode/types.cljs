@@ -126,3 +126,37 @@
     (set! (.-appendChoice obj) (fn [& _] obj))
     (set! (.-appendVariable obj) (fn [& _] obj))
     obj))
+
+(defn- uri->key [uri] (if (string? uri) uri (.toString uri)))
+
+(defn work-space-edit
+  "vscode.WorkspaceEdit — a mutable builder accumulating per-uri TextEdits. Used with
+  `new vscode.WorkspaceEdit()` (constructor: the returned object wins). `_entries`
+  exposes {uri-string → [#js{:range :newText}]} for the language-layer mapper."
+  []
+  (let [changes (atom {})
+        push    (fn [uri edit] (swap! changes update (uri->key uri) (fnil conj []) edit))]
+    #js {:replace  (fn [uri range new-text] (push uri #js {:range range :newText new-text}))
+         :insert   (fn [uri pos text] (push uri #js {:range #js {:start pos :end pos} :newText text}))
+         :delete   (fn [uri range] (push uri #js {:range range :newText ""}))
+         :set      (fn [uri edits] (swap! changes assoc (uri->key uri) (vec (array-seq edits))))
+         :get      (fn [uri] (clj->js (get @changes (uri->key uri) [])))
+         :has      (fn [uri] (contains? @changes (uri->key uri)))
+         :_entries (fn [] @changes)}))
+
+(defn code-action
+  "vscode.CodeAction — `new vscode.CodeAction(title, kind)`; `.edit`/`.command`/
+  `.isPreferred` are set by the extension afterwards."
+  [title kind]
+  #js {:title title :kind kind :edit nil :command nil :diagnostics nil :isPreferred false})
+
+;; CodeActionKind — the standard kind hierarchy; each carries a dotted `.value`.
+(def CodeActionKind
+  #js {:Empty            #js {:value ""}
+       :QuickFix         #js {:value "quickfix"}
+       :Refactor         #js {:value "refactor"}
+       :RefactorExtract  #js {:value "refactor.extract"}
+       :RefactorInline   #js {:value "refactor.inline"}
+       :RefactorRewrite  #js {:value "refactor.rewrite"}
+       :Source           #js {:value "source"}
+       :SourceOrganizeImports #js {:value "source.organizeImports"}})

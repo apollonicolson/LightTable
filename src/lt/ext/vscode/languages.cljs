@@ -10,7 +10,8 @@
 
 (defonce ^:private providers (atom {:completion [] :hover [] :definition []
                                     :document-symbol [] :references []
-                                    :formatting [] :signature []}))
+                                    :formatting [] :signature []
+                                    :rename [] :code-action []}))
 (defonce ^:private diag-sink (atom nil))   ; (fn [uri-string lsp-diagnostics-js])
 
 (defn set-diagnostic-sink! [f] (reset! diag-sink f))
@@ -89,6 +90,23 @@
                    (matching :signature (.-languageId document)))]
     (.then (.all js/Promise (into-array calls))
            (fn [results] (first (remove nil? (array-seq results)))))))
+
+(defn provide-rename
+  "RenameProvider.provideRenameEdits(doc, position, newName, token) → WorkspaceEdit."
+  [document position new-name]
+  (let [calls (map (fn [e] (.resolve js/Promise ((aget (:provider e) "provideRenameEdits") document position new-name nil)))
+                   (matching :rename (.-languageId document)))]
+    (.then (.all js/Promise (into-array calls))
+           (fn [results] (first (remove nil? (array-seq results)))))))
+
+(defn provide-code-actions
+  "CodeActionProvider.provideCodeActions(doc, range, context, token) → (Command|CodeAction)[]."
+  [document range]
+  (let [ctx   #js {:diagnostics #js [] :only nil}
+        calls (map (fn [e] (.resolve js/Promise ((aget (:provider e) "provideCodeActions") document range ctx nil)))
+                   (matching :code-action (.-languageId document)))]
+    (.then (.all js/Promise (into-array calls))
+           (fn [results] (into-array (mapcat #(array-seq %) (remove nil? (array-seq results))))))))
 
 ;; ── Result → CM6 renderer mappings ───────────────────────────────────────────
 (defn- label-of [it]
@@ -174,6 +192,36 @@
          (sort-by :from >)
          vec)))
 
+(defn- text-edit->range-data [e]
+  (let [r (.-range e)]
+    {:range {:start {:line (.. r -start -line) :character (.. r -start -character)}
+             :end   {:line (.. r -end -line)   :character (.. r -end -character)}}
+     :new-text (.-newText e)}))
+
+(defn workspace-edit->data
+  "VSCode WorkspaceEdit → serializable {:changes {uri-string [{:range :new-text}]}}.
+  Range-based (multi-file; main resolves offsets per doc), reusing the edit shape."
+  [we]
+  (when we
+    {:changes (into {} (for [[uri edits] ((.-_entries we))]
+                         [uri (mapv text-edit->range-data (if (vector? edits) edits (array-seq edits)))]))}))
+
+(defn- code-action-kind-str [k] (cond (nil? k) nil (string? k) k :else (.-value k)))
+
+(defn code-actions->data
+  "VSCode (Command | CodeAction)[] → serializable clj. A Command has a string
+  `.command`; a CodeAction has `.title`/`.kind`/`.edit`/`.command`(obj)."
+  [actions]
+  (when actions
+    (mapv (fn [a]
+            (let [cmd (.-command a)]
+              (cond-> {:title (.-title a)}
+                (.-kind a)        (assoc :kind (code-action-kind-str (.-kind a)))
+                (.-isPreferred a) (assoc :is-preferred true)
+                (.-edit a)        (assoc :edit (workspace-edit->data (.-edit a)))
+                cmd               (assoc :command (if (string? cmd) cmd (.-command cmd))))))
+          (array-seq actions))))
+
 (defn signature-help->data
   "VSCode SignatureHelp → serializable clj (label/documentation/parameters)."
   [sh]
@@ -229,10 +277,13 @@
        :registerReferenceProvider      (fn [sel prov] (register :references sel prov))
        :registerDocumentFormattingEditProvider (fn [sel prov] (register :formatting sel prov))
        :registerSignatureHelpProvider  (fn [sel prov & _meta] (register :signature sel prov))
+       :registerRenameProvider         (fn [sel prov] (register :rename sel prov))
+       :registerCodeActionsProvider    (fn [sel prov & _meta] (register :code-action sel prov))
        :createDiagnosticCollection     (fn [name] (create-diagnostic-collection name))})
 
 (defn reset-languages! []
   (reset! providers {:completion [] :hover [] :definition []
                      :document-symbol [] :references []
-                     :formatting [] :signature []})
+                     :formatting [] :signature []
+                     :rename [] :code-action []})
   (reset! diag-sink nil))

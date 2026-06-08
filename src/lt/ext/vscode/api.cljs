@@ -32,4 +32,7 @@
        :Hover               types/hover
        :Location            types/location
        :MarkdownString      types/markdown-string
-       :SnippetString       types/snippet-string}))
+       :SnippetString       types/snippet-string
+       :WorkspaceEdit       types/work-space-edit
+       :CodeAction          types/code-action
+       :CodeActionKind      types/CodeActionKind}))

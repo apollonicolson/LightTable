@@ -23,9 +23,10 @@
     shim))
 
 (defn- invoke! [endpoint mirror msg]
-  (let [{:keys [feature uri line character]} msg
-        doc (get @mirror uri)
-        pos #js {:line line :character character}
+  (let [{:keys [feature uri line character end-line end-character new-name]} msg
+        doc   (get @mirror uri)
+        pos   #js {:line line :character character}
+        range #js {:start pos :end (if end-line #js {:line end-line :character end-character} pos)}
         reply (fn [data] ((:reply endpoint) msg {:t :result :data data}))]
     (when doc
       (case feature
@@ -43,6 +44,10 @@
                            (fn [edits] (reply (languages/text-edits->changes doc edits))))
         :signature  (.then (languages/provide-signature-help doc pos)
                            (fn [sh] (reply (languages/signature-help->data sh))))
+        :rename     (.then (languages/provide-rename doc pos new-name)
+                           (fn [we] (reply (languages/workspace-edit->data we))))
+        :code-actions (.then (languages/provide-code-actions doc range)
+                             (fn [as] (reply (languages/code-actions->data as))))
         nil))))
 
 (defn start!
