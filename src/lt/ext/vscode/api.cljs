@@ -29,4 +29,5 @@
        :DiagnosticSeverity  types/DiagnosticSeverity
        :Hover               types/hover
        :Location            types/location
-       :MarkdownString      types/markdown-string})
+       :MarkdownString      types/markdown-string
+       :SnippetString       types/snippet-string})

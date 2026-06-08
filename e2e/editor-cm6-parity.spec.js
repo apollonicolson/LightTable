@@ -468,3 +468,23 @@ test('VSCode ext host — language provider drives live completions + diagnostic
   await expect.poll(() => lt('diagnosticCount')).toBeGreaterThan(0);
   expect(await win.locator('.cm-diag-error').count()).toBeGreaterThanOrEqual(1);
 });
+
+// ADR 0011 phase 6a — run a REAL extension: Microsoft's official completions-sample
+// (vscode-extension-samples, MIT), built with tsc and vendored as test/fixtures/
+// completions-sample. Its provider1 returns 4 CompletionItems (incl. a SnippetString
+// insertText + a commitCharacters/command item); we assert they flow into the live
+// hint list. Validates the host against unmodified real extension code.
+test('VSCode ext host — runs the real MS completions-sample', async () => {
+  await lt('extReset');
+  await lt('openCm6', 'console.\n');
+  await lt('wsTrackActive', 'file:///plain.txt');
+  expect(await lt('extLoad', path.join(ROOT, 'test/fixtures/completions-sample'))).toBe(true);
+  // provider registered for 'plaintext' — invoke with that languageId
+  await lt('extProvideCompletion', 'file:///plain.txt', 0, 0, 'plaintext');
+  const hints = await lt('editorHints');
+  expect(hints).toContain('Hello World!');     // simpleCompletion
+  expect(hints).toContain('console');          // commitCharacter completion
+  expect(hints).toContain('new ');             // command completion (insertText 'new ')
+  // the snippet completion's insertText (a SnippetString) surfaced as its .value
+  expect(hints.some((h) => h.includes('Good ${1|morning'))).toBe(true);
+});

@@ -112,3 +112,17 @@
     (set! (.-appendText obj) (fn [s] (set! (.-value obj) (str (.-value obj) s)) obj))
     (set! (.-appendMarkdown obj) (fn [s] (set! (.-value obj) (str (.-value obj) s)) obj))
     obj))
+
+(defn snippet-string
+  "vscode.SnippetString — a snippet template. We carry `.value`; the append*
+  builders mutate it and return `this` (tabstop/placeholder expansion is a known
+  gap — value is taken literally for now)."
+  [value]
+  (let [obj #js {:value (or value "")}
+        app (fn [s] (set! (.-value obj) (str (.-value obj) (or s ""))) obj)]
+    (set! (.-appendText obj) app)
+    (set! (.-appendTabstop obj) (fn [& _] obj))
+    (set! (.-appendPlaceholder obj) (fn [& _] obj))
+    (set! (.-appendChoice obj) (fn [& _] obj))
+    (set! (.-appendVariable obj) (fn [& _] obj))
+    obj))

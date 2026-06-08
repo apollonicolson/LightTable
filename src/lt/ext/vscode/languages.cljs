@@ -52,13 +52,22 @@
   (.then (call-all :definition document position "provideDefinition") first))
 
 ;; ── Result → CM6 renderer mappings ───────────────────────────────────────────
+(defn- label-of [it]
+  (let [l (.-label it)] (if (string? l) l (.-label l))))
+
+(defn- insert-text-of
+  "The text a CompletionItem inserts: a string insertText, a SnippetString's
+  `.value`, else the label."
+  [it]
+  (let [ins (.-insertText it)]
+    (cond (string? ins)        ins
+          (and ins (.-value ins)) (.-value ins)   ; SnippetString
+          :else                  (label-of it))))
+
 (defn completion-items->hints
   "VSCode CompletionItem[] → hint items ({.completion .text}) for the hint UI."
   [items]
-  (into-array (map (fn [it]
-                     (let [label (.-label it)
-                           lab   (if (string? label) label (.-label label))]
-                       #js {:completion (or (.-insertText it) lab) :text lab}))
+  (into-array (map (fn [it] #js {:completion (insert-text-of it) :text (label-of it)})
                    (array-seq items))))
 
 (defn hover->text

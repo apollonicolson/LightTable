@@ -164,11 +164,11 @@
        ;; phase 4b: invoke language completion providers for the doc at `uri`, map to
        ;; hints, cache them on the editor (the ::lsp-hints :hints+ source renders them)
        :extProvideCompletion
-       (fn [uri line ch]
+       (fn [uri line ch language-id]
          (js/Promise.
           (fn [resolve _reject]
             (if-let [e (get @ext-uri->editor uri)]
-              (let [d   (ext-doc/make-text-document {:uri uri :languageId "clojure"
+              (let [d   (ext-doc/make-text-document {:uri uri :languageId (or language-id "clojure")
                                                      :text (editor/->val e)})
                     pos (ext-types/->Position line ch)]
                 (.then (ext-langs/provide-completions d pos)
