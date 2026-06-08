@@ -31,7 +31,11 @@
   ;; pulls it via :include-macros, so cheshire must be on the COMPILE classpath
   ;; (JVM, macro-ns loading). The :cljs output uses native JSON — cheshire is not
   ;; bundled into the renderer.
-  [cheshire/cheshire "5.13.0"]]
+  [cheshire/cheshire "5.13.0"]
+  ;; transit+json is the membrane wire codec (lt.ext.membrane/port-transport) —
+  ;; faster + key-caching + richer types than EDN-via-read-string, for cljs↔clj
+  ;; over the real cross-process boundary (ADR 0012).
+  [com.cognitect/transit-cljs "0.8.280"]]
 
  :builds
  {:app

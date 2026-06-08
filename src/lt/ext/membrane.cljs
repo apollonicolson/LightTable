@@ -7,8 +7,8 @@
   VSCode's per-member proxy. Driven over an in-process LOOPBACK transport first
   (node-gated) to prove the protocol is sufficient + thin before the real cross-
   process boundary (5b); `port-transport` is the real-boundary adapter (a MessagePort
-  / contextBridge channel, EDN-serialized). Pure — no editor/adapter deps."
-  (:require [cljs.reader :as reader]))
+  / contextBridge channel, transit+json-serialized). Pure — no editor/adapter deps."
+  (:require [cognitect.transit :as transit]))
 
 (defn loopback
   "Two connected transport ends. Each end's `:send` delivers (async, to mimic the
@@ -18,16 +18,21 @@
     [{:on (fn [h] (reset! ha h)) :send (fn [m] (js/setTimeout #(when @hb (@hb m)) 0))}
      {:on (fn [h] (reset! hb h)) :send (fn [m] (js/setTimeout #(when @ha (@ha m)) 0))}]))
 
+(defonce ^:private writer (transit/writer :json))
+(defonce ^:private reader (transit/reader :json))
+
 (defn port-transport
   "Adapt a MessagePort-like object (`.postMessage` + `.onmessage` receiving a
-  MessageEvent with `.data`) to the transport shape `{:on :send}`, with EDN
-  serialization. The real cross-process boundary (5b-2) drops a real MessagePort /
-  contextBridge channel in here. Messages cross as EDN STRINGS — CLJS data does not
-  survive structured-clone — so membrane messages must be pure serializable clj data
-  (JS conversion happens at the host/main edges, not on the wire)."
+  MessageEvent with `.data`) to the transport shape `{:on :send}`, with transit+json
+  serialization (faster + key-caching + richer types than EDN). The real cross-
+  process boundary (5b-2) drops a real MessagePort / contextBridge channel in here.
+  Messages cross as transit-json STRINGS — CLJS data does not survive structured-
+  clone — so membrane messages must be pure serializable clj data (keywords/sets/
+  maps round-trip natively; JS conversion happens at the host/main edges, not on the
+  wire)."
   [port]
-  {:on   (fn [h] (set! (.-onmessage port) (fn [ev] (h (reader/read-string (.-data ev))))))
-   :send (fn [m] (.postMessage port (pr-str m)))})
+  {:on   (fn [h] (set! (.-onmessage port) (fn [ev] (h (transit/read reader (.-data ev))))))
+   :send (fn [m] (.postMessage port (transit/write writer m)))})
 
 (def ^:private reply-types #{:result :effect-result})
 

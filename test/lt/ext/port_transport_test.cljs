@@ -1,9 +1,9 @@
 (ns lt.ext.port-transport-test
   "Phase 5b-2 gate (ADR 0012): the membrane works over a REAL-boundary-shaped
-  transport with EDN serialization. Two `port-transport`s connected by a fake
+  transport with transit+json serialization. Two `port-transport`s connected by a fake
   MessageChannel (messages cross as STRINGS) carry the protocol — register, invoke
   (clj-data payload, not clj->js), and a gated effect whose capability map
-  round-trips through EDN and still matches a grant. Proves the wire is serializable
+  round-trips through transit and still matches a grant. Proves the wire is serializable
   pure-clj data, ready to drop a real MessagePort / contextBridge channel in."
   (:require [cljs.test :refer-macros [deftest is async]]
             [lt.ext.membrane :as m]
@@ -11,8 +11,8 @@
 
 (defn- fake-channel
   "Two MessagePort-likes; a.postMessage(s) → b.onmessage({data:s}) (async), and
-  vice-versa. The payload is whatever was posted (the transport's EDN string), so a
-  non-string leaking onto the wire would blow up read-string — serialization is real."
+  vice-versa. The payload is whatever was posted (the transport's transit string), so a
+  non-string leaking onto the wire would blow up transit/read — serialization is real."
   []
   (let [a (js-obj) b (js-obj)]
     (set! (.-postMessage a) (fn [s] (js/setTimeout #(when-let [h (.-onmessage b)] (h #js {:data s})) 0)))
@@ -41,11 +41,11 @@
     (async done
       ((:notify host) {:t :register :feature :completion})
       (let [r1 ((:request main) {:t :invoke :feature :completion})]
-        (is (= #{:completion} @registry) "register survived EDN serialization (keyword preserved)")
+        (is (= #{:completion} @registry) "register survived transit+json serialization (keyword preserved)")
         (is (= "ok" (:label (first (:data r1)))) "invoke clj-data payload round-tripped through the wire"))
       (let [r2 ((:request host) {:t :effect :principal "p" :capability cap :op :read})]
         (is (false? (:ok r2)) "effect denied by default — serialized capability gated on the main side"))
       (gate/grant! "p" cap)
       (let [r3 ((:request host) {:t :effect :principal "p" :capability cap :op :read})]
-        (is (true? (:ok r3)) "capability map round-tripped through EDN and still matched the grant"))
+        (is (true? (:ok r3)) "capability map round-tripped through transit and still matched the grant"))
       (done))))
