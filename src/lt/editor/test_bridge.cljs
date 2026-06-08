@@ -19,10 +19,16 @@
             [lt.editor.cm6.view :as cm6-view]
             [lt.plugins.auto-complete :as ac]
             [lt.lsp.connector :as lsp-conn]
+            [lt.objs.command :as cmd]
+            [lt.ext.host :as ext-host]
+            [lt.ext.vscode.api :as ext-api]
+            [lt.ext.vscode.command-bridge :as ext-cmd-bridge]
             [lt.objs.tabs :as tabs])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (defn- ed [] (pool/last-active))
+
+(defonce ^:private ext-active (atom nil))
 
 ;; Proves the CM6 updateListener actually drives LightTable behaviors: counts
 ;; :change raises on the editor object (attached in openCm6).
@@ -128,6 +134,18 @@
                           (lsp-conn/open! e uri "clojure" (editor/->val e)))
                         nil)
        :lspReset      (fn [] (lsp-conn/reset-all!) nil)
+       ;; VSCode extension host (ADR 0011 phase 2b): load an extension from `dir`,
+       ;; injecting the vscode shim + bridging its commands into lt.objs.command.
+       :extLoad       (fn [dir]
+                        (ext-host/install-vscode! (ext-api/make-vscode))
+                        (ext-cmd-bridge/install!)
+                        (let [active (ext-host/activate! (ext-host/read-manifest dir))]
+                          (reset! ext-active active)
+                          (boolean active)))
+       ;; run a command through the LIVE LightTable command system (proves the
+       ;; extension's vscode command became a real lt.objs.command), return result.
+       :extExec       (fn [id & args] (apply cmd/exec! (keyword id) args))
+       :extDeactivate (fn [] (when-let [a @ext-active] (ext-host/deactivate! a)) nil)
        ;; request LSP completion at (line,character) for the active editor; resolves
        ;; (a promise) with the completion strings, and caches them as :lsp/completions.
        :lspComplete   (fn [uri line character]

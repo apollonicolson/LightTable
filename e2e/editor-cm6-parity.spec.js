@@ -417,3 +417,15 @@ test('CM6 live — LSP go-to-definition resolves a location', async () => {
   expect(loc).toEqual({ uri: 'file:///tmp/target.clj', line: 4, character: 2 });
   await lt('lspReset');
 });
+
+// ADR 0011 phase 2b — a VSCode extension's command runs through the LIVE LightTable
+// command system. extLoad injects the vscode shim + bridges commands into
+// lt.objs.command + activates the fixture; extExec runs the command via cmd/exec!
+// (so success proves the extension's vscode command became a real LightTable command).
+test('VSCode ext host — extension command runs via the live command system', async () => {
+  const extDir = path.join(ROOT, 'test/fixtures/cmd-extension');
+  expect(await lt('extLoad', extDir)).toBe(true);
+  expect(await lt('extExec', 'cmd.hello', 'ext')).toBe('hello ext');   // bridged + runs
+  await lt('extDeactivate');
+  expect(await lt('extExec', 'cmd.hello', 'ext')).toBeFalsy();         // disposed → forgotten
+});

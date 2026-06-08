@@ -21,6 +21,12 @@
     (object/add-tags (:options cmd) [:command.options]))
   (object/raise manager :added cmd))
 
+(defn forget
+  "Remove a previously-defined command by its keyword id (e.g. for an extension
+  command disposed on deactivate)."
+  [command-id]
+  (object/update! manager [:commands] dissoc command-id))
+
 (defn- by-id [k]
   (-> @manager :commands (get (if (map? k)
                                 (:command k)

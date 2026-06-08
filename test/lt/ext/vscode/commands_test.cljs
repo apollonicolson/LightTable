@@ -26,3 +26,20 @@
   (async done
     (.then (c/execute-command "nope")
            (fn [r] (is (nil? r) "absence shape, not a throw") (done)))))
+
+(deftest bridge-hooks-fire
+  (c/reset-registry!)
+  (let [registered (atom nil) unregistered (atom nil)]
+    (reset! c/on-register (fn [id _f] (reset! registered id)))
+    (reset! c/on-unregister (fn [id] (reset! unregistered id)))
+    (reset! c/fallback-execute (fn [id args] (str "fallback:" id ":" (first args))))
+    (let [d (c/register-command "x.y" (fn [] nil))]
+      (is (= "x.y" @registered) "on-register fired (→ lt.objs.command in Electron)")
+      (.dispose d)
+      (is (= "x.y" @unregistered) "on-unregister fired on dispose (→ cmd/forget)"))
+    (async done
+      (.then (c/execute-command "lt.native" "a")
+             (fn [r]
+               (is (= "fallback:lt.native:a" r)
+                   "unknown id falls through to the LightTable command system")
+               (done))))))
