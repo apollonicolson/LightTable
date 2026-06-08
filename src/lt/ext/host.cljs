@@ -12,6 +12,26 @@
 (def ^:private fs   (js/require "fs"))
 (def ^:private path (js/require "path"))
 
+;; The injected `vscode` module: extensions `require('vscode')` and get this shim.
+;; In a real sandboxed-renderer host this is provided over the contextBridge; here
+;; (in-renderer/node de-risking) we patch Node's module loader once.
+(defonce ^:private vscode-shim (atom nil))
+
+(defn install-vscode!
+  "Make `require('vscode')` return `shim` for all extensions. Idempotent."
+  [shim]
+  (reset! vscode-shim shim)
+  (let [Module (js/require "module")]
+    (when-not (.-_ltVscodePatched Module)
+      (let [orig (.-_load Module)]
+        (set! (.-_load Module)
+              (fn [request parent is-main]
+                (if (= request "vscode")
+                  @vscode-shim
+                  (.call orig Module request parent is-main))))
+        (set! (.-_ltVscodePatched Module) true))))
+  shim)
+
 (defn read-manifest
   "Read + parse `dir`/package.json into a descriptor with `:dir` attached."
   [dir]

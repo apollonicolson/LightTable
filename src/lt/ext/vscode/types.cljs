@@ -1,0 +1,83 @@
+(ns lt.ext.vscode.types
+  "Phase 2 of the VSCode extension host (ADR 0011): the core `vscode` value types
+  extensions construct + receive — Position, Range, Uri, Disposable, EventEmitter.
+  Plain immutable values, no editor/Node deps → node-loadable + tested. Faithful to
+  the public contract (vscode.d.ts): JS-constructible (`new vscode.Position(...)`),
+  property access (`pos.line`), instanceof, and the common methods. Overloads/long
+  tail added target-driven.")
+
+;; ── Position ──────────────────────────────────────────────────────────────
+(deftype Position [line character]
+  Object
+  (isEqual         [_ o] (and (= line (.-line o)) (= character (.-character o))))
+  (isBefore        [_ o] (or (< line (.-line o))
+                             (and (= line (.-line o)) (< character (.-character o)))))
+  (isBeforeOrEqual [this o] (or (.isBefore this o) (.isEqual this o)))
+  (isAfter         [this o] (not (.isBeforeOrEqual this o)))
+  (isAfterOrEqual  [this o] (not (.isBefore this o)))
+  (translate       [_ dl dc] (Position. (+ line (or dl 0)) (+ character (or dc 0))))
+  (with            [_ l c] (Position. (if (some? l) l line) (if (some? c) c character)))
+  (compareTo       [this o] (cond (.isBefore this o) -1 (.isEqual this o) 0 :else 1)))
+
+;; ── Range (deftype VRange to avoid shadowing cljs.core/Range; exposed as
+;;    vscode.Range = make-range, which supports both ctor signatures) ───────────
+(deftype VRange [start end]
+  Object
+  (isEmpty      [_] (.isEqual start end))
+  (isSingleLine [_] (= (.-line start) (.-line end)))
+  (contains     [_ x] (let [s (if (.-start x) (.-start x) x)
+                            e (if (.-end x) (.-end x) x)]
+                        (and (not (.isBefore s start)) (not (.isAfter e end)))))
+  (isEqual      [_ o] (and (.isEqual start (.-start o)) (.isEqual end (.-end o))))
+  (with         [_ s e] (VRange. (if (some? s) s start) (if (some? e) e end))))
+
+(defn make-range
+  "vscode.Range constructor — (start,end) Positions or (sl,sc,el,ec) numbers."
+  ([start end] (->VRange start end))
+  ([sl sc el ec] (->VRange (->Position sl sc) (->Position el ec))))
+;; alias the prototype so `x instanceof vscode.Range` holds for both signatures.
+(set! (.-prototype make-range) (.-prototype VRange))
+
+;; ── Uri (constructed via static file/parse; fsPath precomputed) ──────────────
+(deftype Uri [scheme authority path query fragment fsPath]
+  Object
+  (toString [_] (str scheme "://" authority path
+                     (when (seq query) (str "?" query))
+                     (when (seq fragment) (str "#" fragment))))
+  (with [_ change] (Uri. (or (.-scheme change) scheme)
+                         (or (.-authority change) authority)
+                         (or (.-path change) path)
+                         (or (.-query change) query)
+                         (or (.-fragment change) fragment)
+                         (or (.-path change) fsPath))))
+
+(defn- uri-file [p] (->Uri "file" "" p "" "" p))
+
+(defn- uri-parse [s]
+  (let [m (re-matches #"^([a-zA-Z][a-zA-Z0-9+.\-]*)://([^/?#]*)([^?#]*)(?:\?([^#]*))?(?:#(.*))?$" s)]
+    (if m
+      (let [[_ scheme authority path query fragment] m]
+        (->Uri scheme authority path (or query "") (or fragment "") path))
+      (->Uri "file" "" s "" "" s))))
+
+(set! (.-file Uri) (fn [p] (uri-file p)))
+(set! (.-parse Uri) (fn [s] (uri-parse s)))
+
+;; ── Disposable ──────────────────────────────────────────────────────────────
+(deftype Disposable [^:mutable callOnDispose]
+  Object
+  (dispose [_] (when callOnDispose (callOnDispose) (set! callOnDispose nil))))
+
+(defn disposable [f] (->Disposable f))
+
+(set! (.-from Disposable)
+      (fn [& ds] (->Disposable (fn [] (doseq [d ds] (when (and d (.-dispose d)) (.dispose d)))))))
+
+;; ── EventEmitter (`.event` subscribes → Disposable; `.fire`; `.dispose`) ──────
+(defn event-emitter []
+  (let [listeners (atom #{})]
+    #js {:event   (fn [listener]
+                    (swap! listeners conj listener)
+                    (->Disposable (fn [] (swap! listeners disj listener))))
+         :fire    (fn [data] (doseq [l @listeners] (l data)))
+         :dispose (fn [] (reset! listeners #{}))}))

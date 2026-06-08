@@ -1,0 +1,9 @@
+{
+  "name": "cmd-ext",
+  "publisher": "lt-test",
+  "version": "0.0.1",
+  "engines": { "vscode": "^1.0.0" },
+  "main": "./extension.js",
+  "activationEvents": ["onCommand:cmd.hello"],
+  "contributes": { "commands": [{ "command": "cmd.hello", "title": "Hello" }] }
+}
