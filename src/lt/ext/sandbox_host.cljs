@@ -39,6 +39,10 @@
                            (fn [s] (reply (languages/document-symbols->data s))))
         :references (.then (languages/provide-references doc pos)
                            (fn [r] (reply (languages/references->data r))))
+        :format     (.then (languages/provide-formatting doc)
+                           (fn [edits] (reply (languages/text-edits->changes doc edits))))
+        :signature  (.then (languages/provide-signature-help doc pos)
+                           (fn [sh] (reply (languages/signature-help->data sh))))
         nil))))
 
 (defn start!

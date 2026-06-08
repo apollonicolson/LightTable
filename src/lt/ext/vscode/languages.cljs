@@ -9,7 +9,8 @@
             [clojure.string :as str]))
 
 (defonce ^:private providers (atom {:completion [] :hover [] :definition []
-                                    :document-symbol [] :references []}))
+                                    :document-symbol [] :references []
+                                    :formatting [] :signature []}))
 (defonce ^:private diag-sink (atom nil))   ; (fn [uri-string lsp-diagnostics-js])
 
 (defn set-diagnostic-sink! [f] (reset! diag-sink f))
@@ -70,6 +71,24 @@
                    (matching :references (.-languageId document)))]
     (.then (.all js/Promise (into-array calls))
            (fn [results] (into-array (mapcat #(array-seq %) (remove nil? (array-seq results))))))))
+
+(defn provide-formatting
+  "DocumentFormattingEditProvider.provideDocumentFormattingEdits(doc, options, token)
+  → the first matching provider's TextEdit[]."
+  [document]
+  (let [opts  #js {:tabSize 2 :insertSpaces true}
+        calls (map (fn [e] (.resolve js/Promise ((aget (:provider e) "provideDocumentFormattingEdits") document opts nil)))
+                   (matching :formatting (.-languageId document)))]
+    (.then (.all js/Promise (into-array calls))
+           (fn [results] (first (remove nil? (array-seq results)))))))
+
+(defn provide-signature-help
+  "SignatureHelpProvider.provideSignatureHelp(doc, position, token, context)."
+  [document position]
+  (let [calls (map (fn [e] (.resolve js/Promise ((aget (:provider e) "provideSignatureHelp") document position nil nil)))
+                   (matching :signature (.-languageId document)))]
+    (.then (.all js/Promise (into-array calls))
+           (fn [results] (first (remove nil? (array-seq results)))))))
 
 ;; ── Result → CM6 renderer mappings ───────────────────────────────────────────
 (defn- label-of [it]
@@ -140,6 +159,35 @@
                    :character (.. r -start -character)}))
         (array-seq locs)))
 
+(defn text-edits->changes
+  "VSCode TextEdit[] → CM6-shaped change specs [{:from :to :insert}] using the
+  document's offsetAt (host-side — the host holds the mirror), so main can apply them
+  directly. Sorted by :from DESCENDING so sequential application doesn't shift the
+  offsets of not-yet-applied edits."
+  [document edits]
+  (when edits
+    (->> (array-seq edits)
+         (map (fn [e] (let [r (.-range e)]
+                        {:from   (.offsetAt document (.-start r))
+                         :to     (.offsetAt document (.-end r))
+                         :insert (.-newText e)})))
+         (sort-by :from >)
+         vec)))
+
+(defn signature-help->data
+  "VSCode SignatureHelp → serializable clj (label/documentation/parameters)."
+  [sh]
+  (when sh
+    {:active-signature (.-activeSignature sh)
+     :active-parameter (.-activeParameter sh)
+     :signatures (mapv (fn [s]
+                         {:label         (.-label s)
+                          :documentation (let [d (.-documentation s)]
+                                           (if (string? d) d (some-> d .-value)))
+                          :parameters    (mapv (fn [p] {:label (.-label p)})
+                                               (array-seq (or (.-parameters s) #js [])))})
+                       (array-seq (or (.-signatures sh) #js [])))}))
+
 ;; ── DiagnosticCollection (→ cm6.diagnostics via the sink) ────────────────────
 (defn- uri-key [uri] (if (string? uri) uri (.toString uri)))
 
@@ -179,9 +227,12 @@
        :registerDefinitionProvider     (fn [sel prov] (register :definition sel prov))
        :registerDocumentSymbolProvider (fn [sel prov] (register :document-symbol sel prov))
        :registerReferenceProvider      (fn [sel prov] (register :references sel prov))
+       :registerDocumentFormattingEditProvider (fn [sel prov] (register :formatting sel prov))
+       :registerSignatureHelpProvider  (fn [sel prov & _meta] (register :signature sel prov))
        :createDiagnosticCollection     (fn [name] (create-diagnostic-collection name))})
 
 (defn reset-languages! []
   (reset! providers {:completion [] :hover [] :definition []
-                     :document-symbol [] :references []})
+                     :document-symbol [] :references []
+                     :formatting [] :signature []})
   (reset! diag-sink nil))
