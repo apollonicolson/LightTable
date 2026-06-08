@@ -70,6 +70,12 @@
   (into-array (map (fn [it] #js {:completion (insert-text-of it) :text (label-of it)})
                    (array-seq items))))
 
+(defn completion-items->data
+  "VSCode CompletionItem[] → SERIALIZABLE clj completion data ({:completion :text})
+  for the membrane (the `->hints` variant emits #js for the in-renderer hint UI)."
+  [items]
+  (mapv (fn [it] {:completion (insert-text-of it) :text (label-of it)}) (array-seq items)))
+
 (defn hover->text
   "VSCode Hover → plain text (contents = string | MarkdownString | array)."
   [hov]

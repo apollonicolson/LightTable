@@ -10,7 +10,9 @@
   or over a loopback (node-gated)."
   (:require [lt.ext.loader :as loader]
             [lt.ext.vscode.api :as api]
-            [lt.ext.vscode.fs-membrane :as fsm]))
+            [lt.ext.vscode.fs-membrane :as fsm]
+            [lt.ext.vscode.languages :as languages]
+            [lt.ext.vscode.document :as document]))
 
 (defn make-host-shim
   "The vscode shim for a sandboxed host: the standard shim, but `workspace.fs` routes
@@ -20,15 +22,32 @@
     (set! (.-fs (.-workspace shim)) (fsm/make-file-system endpoint))
     shim))
 
+(defn- invoke! [endpoint mirror msg]
+  (let [{:keys [feature uri line character]} msg
+        doc (get @mirror uri)
+        pos #js {:line line :character character}
+        reply (fn [data] ((:reply endpoint) msg {:t :result :data data}))]
+    (when doc
+      (case feature
+        :completion (.then (languages/provide-completions doc pos)
+                           (fn [items] (reply (languages/completion-items->data items))))
+        :hover      (.then (languages/provide-hover doc pos)
+                           (fn [h] (reply (languages/hover->text h))))
+        :definition (.then (languages/provide-definition doc pos)
+                           (fn [d] (reply (languages/definition->location d))))
+        nil))))
+
 (defn start!
-  "Run the host loop over `endpoint` for the extension `principal`. Handles
-  `:activate` as a REQUEST: load + run the extension with the membrane shim, await
-  its activate() return (which may itself await gated effects over the membrane),
-  then reply `{:t :result :data <activate-return>}` so the editor knows activation
-  completed and what it produced. Returns the activated-extensions atom
-  (id → {:ctx :api})."
+  "Run the host loop over `endpoint` for the extension `principal`. Handles:
+   - `:activate` (request) — load + run the extension with the membrane shim, await
+     its activate() return, reply `{:t :result :data <return>}`;
+   - `:doc` — keep the host's LOCAL document mirror current (reads never cross);
+   - `:invoke` (request) — run the registered provider on the local mirror, map the
+     result to serializable clj data, reply.
+  Returns the activated-extensions atom (id → {:ctx :api})."
   [endpoint principal]
   (let [exts       (atom {})
+        mirror     (atom {})                       ; uri → TextDocument (local; reads stay here)
         require-fn (loader/make-require (make-host-shim endpoint principal))]
     ((:on endpoint)
      (fn [msg]
@@ -40,5 +59,10 @@
                          (.then (fn [result]
                                   (swap! exts assoc id {:ctx ctx :api result})
                                   ((:reply endpoint) msg {:t :result :data result})))))
+         :doc      (let [{:keys [op uri text]} msg]
+                     (if (= op :close)
+                       (swap! mirror dissoc uri)
+                       (swap! mirror assoc uri (document/make-text-document {:uri uri :text text}))))
+         :invoke   (invoke! endpoint mirror msg)
          nil)))
     exts))
