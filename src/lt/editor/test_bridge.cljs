@@ -23,12 +23,22 @@
             [lt.ext.host :as ext-host]
             [lt.ext.vscode.api :as ext-api]
             [lt.ext.vscode.command-bridge :as ext-cmd-bridge]
+            [lt.ext.vscode.workspace :as ext-ws]
+            [lt.ext.vscode.window :as ext-window]
             [lt.objs.tabs :as tabs])
   (:require-macros [lt.macros :refer [behavior]]))
 
 (defn- ed [] (pool/last-active))
 
 (defonce ^:private ext-active (atom nil))
+
+;; Live doc-sync: an editor's CM6 :change → vscode.workspace onDidChangeTextDocument
+;; (ADR 0011 phase 3b). Attached to an editor by wsTrackActive with its ::ws-uri.
+(behavior ::ws-doc-sync
+          :triggers #{:change}
+          :reaction (fn [this update]
+                      (when-let [uri (::ws-uri @this)]
+                        (ext-ws/notify-change! uri (.-changes update) (editor/->val this)))))
 
 ;; Proves the CM6 updateListener actually drives LightTable behaviors: counts
 ;; :change raises on the editor object (attached in openCm6).
@@ -146,6 +156,21 @@
        ;; extension's vscode command became a real lt.objs.command), return result.
        :extExec       (fn [id & args] (apply cmd/exec! (keyword id) args))
        :extDeactivate (fn [] (when-let [a @ext-active] (ext-host/deactivate! a)) nil)
+       :extApiField   (fn [k] (when-let [a @ext-active] (aget (:api a) k)))
+       :extApiCall    (fn [k & args] (when-let [a @ext-active]
+                                       (apply (aget (:api a) k) args)))
+       ;; phase 3b: window/workspace test access + live doc tracking
+       :extReset      (fn [] (ext-window/reset-window!) (ext-ws/reset-workspace!)
+                        (reset! ext-active nil) nil)
+       :wsSetConfig   (fn [m] (ext-ws/set-config! (js->clj m)) nil)
+       :windowMessages (fn [] (clj->js @ext-window/message-log))
+       :wsTrackActive (fn [uri]
+                        (when-let [e (ed)]
+                          (ext-ws/open-document! {:uri uri :languageId "clojure"
+                                                  :text (editor/->val e)})
+                          (object/merge! e {::ws-uri uri})
+                          (object/add-behavior! e ::ws-doc-sync))
+                        nil)
        ;; request LSP completion at (line,character) for the active editor; resolves
        ;; (a promise) with the completion strings, and caches them as :lsp/completions.
        :lspComplete   (fn [uri line character]

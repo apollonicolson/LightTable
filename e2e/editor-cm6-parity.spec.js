@@ -429,3 +429,23 @@ test('VSCode ext host — extension command runs via the live command system', a
   await lt('extDeactivate');
   expect(await lt('extExec', 'cmd.hello', 'ext')).toBeFalsy();         // disposed → forgotten
 });
+
+// ADR 0011 phase 3b — an extension uses vscode.window + vscode.workspace live:
+// shows a message, reads a config value, and observes a live edit via
+// onDidChangeTextDocument (wired from the active CM6 editor's :change).
+test('VSCode ext host — window message + config + live onDidChangeTextDocument', async () => {
+  await lt('extReset');
+  await lt('wsSetConfig', { 'editor.tabSize': 2 });
+  await lt('openCm6', 'abc');
+  await lt('wsTrackActive', 'file:///live.clj');
+  const extDir = path.join(ROOT, 'test/fixtures/ws-extension');
+  expect(await lt('extLoad', extDir)).toBe(true);
+  // window.showInformationMessage reached the log
+  const msgs = await lt('windowMessages');
+  expect(msgs.some((m) => m.text === 'hi from ext')).toBe(true);
+  // workspace.getConfiguration('editor').get('tabSize',4) read the live setting
+  expect(await lt('extApiField', 'tabSize')).toBe(2);
+  // a live edit fires onDidChangeTextDocument → the extension's listener counts it
+  await lt('setVal', 'abcd');
+  await expect.poll(() => lt('extApiCall', 'getChanges')).toBeGreaterThan(0);
+});

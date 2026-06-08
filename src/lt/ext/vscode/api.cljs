@@ -4,7 +4,9 @@
   core value types + commands; window/workspace/languages namespaces are added in
   later phases. Node-loadable + tested."
   (:require [lt.ext.vscode.types :as types]
-            [lt.ext.vscode.commands :as commands]))
+            [lt.ext.vscode.commands :as commands]
+            [lt.ext.vscode.window :as window]
+            [lt.ext.vscode.workspace :as workspace]))
 
 (defn make-vscode
   "Build the `vscode` shim object. Shared across extensions (per-extension state
@@ -15,4 +17,6 @@
        :Uri           types/Uri
        :Disposable    types/Disposable
        :EventEmitter  types/event-emitter
-       :commands      (commands/ns-object)})
+       :commands      (commands/ns-object)
+       :window        (window/ns-object)
+       :workspace     (workspace/ns-object)})
